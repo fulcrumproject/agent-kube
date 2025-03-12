@@ -1,0 +1,7 @@
+__debug**
+.vscode/
+/tmp
+.env
+.DS_Store
+coverage.out
+test-agent
