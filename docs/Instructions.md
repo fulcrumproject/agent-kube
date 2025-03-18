@@ -37,3 +37,9 @@ KUBERNETES_VERSION: v1.30.5
 ```
 
 
+
+
+
+note: 
+KUBECONFIG=./.kube/config
+
