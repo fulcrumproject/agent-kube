@@ -45,19 +45,23 @@ spec:
 ```
 
 #### Creazione via API
-Esistono due modalità per creare un TCP:
+Per creare un TCP, è necessario prima generare un token di accesso:
 
-(! capire come creare il token da utilizzare)
+```bash
+kubectl create token api-access -n kube-system
+```
+
+Esistono due modalità per creare un TCP:
 
 1. **Chiamata diretta con token**:
 ```bash
-curl -X POST https://172.30.232.60/apis/kamaji.clastix.io/v1alpha1/namespaces/default/tenantcontrolplanes \
+curl -X POST https://<KAMAJI_API_SERVER>/apis/kamaji.clastix.io/v1alpha1/namespaces/default/tenantcontrolplanes \
   -H "Authorization: Bearer <YOUR_ACCESS_TOKEN>" \
   -H "Content-Type: application/yaml" \
   --data-binary @tenant-control-plane.yaml 
 ```
 
-2. **Utilizzo del proxy kubectl** (metodo consigliato per sviluppo locale):
+2. **Utilizzo del proxy kubectl** 
 ```bash
 # Avvio proxy
 kubectl proxy
@@ -72,21 +76,24 @@ curl -X POST http://127.0.0.1:8001/apis/kamaji.clastix.io/v1alpha1/namespaces/de
 
 #### Eliminazione TCP
 ```bash
-curl -X DELETE http://127.0.0.1:8001/apis/kamaji.clastix.io/v1alpha1/namespaces/default/tenantcontrolplanes/tenant-test
+curl -X DELETE https://<KAMAJI_API_SERVER>/apis/kamaji.clastix.io/v1alpha1/namespaces/<NAMESPACE>/tenantcontrolplanes/<TENANT_NAME> \
+  -H "Authorization: Bearer <YOUR_ACCESS_TOKEN>"
 ```
 
 #### Aggiornamento TCP
 
 1. **Modifica parametro singolo** (esempio: modifica repliche):
 ```bash
-curl -X PATCH http://127.0.0.1:8001/apis/kamaji.clastix.io/v1alpha1/namespaces/default/tenantcontrolplanes/tenant-test \
+curl -X PATCH https://<KAMAJI_API_SERVER>/apis/kamaji.clastix.io/v1alpha1/namespaces/<NAMESPACE>/tenantcontrolplanes/<TENANT_NAME> \
+  -H "Authorization: Bearer <YOUR_ACCESS_TOKEN>" \
   -H "Content-Type: application/merge-patch+json" \
   -d '{"spec": {"controlPlane": {"deployment": {"replicas": 3}}}}'
 ```
 
 2. **Sostituzione configurazione completa**:
 ```bash
-curl -X PUT http://127.0.0.1:8001/apis/kamaji.clastix.io/v1alpha1/namespaces/default/tenantcontrolplanes/tenant-test \
+curl -X PUT https://<KAMAJI_API_SERVER>/apis/kamaji.clastix.io/v1alpha1/namespaces/<NAMESPACE>/tenantcontrolplanes/tenant-test \
+  -H "Authorization: Bearer <YOUR_ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
   --data-binary @tenantcontrolplane.json
 ```
@@ -97,32 +104,38 @@ curl -X PUT http://127.0.0.1:8001/apis/kamaji.clastix.io/v1alpha1/namespaces/def
 
 - **Lista TCP**:
 ```bash
-curl -s http://127.0.0.1:8001/apis/kamaji.clastix.io/v1alpha1/namespaces/default/tenantcontrolplanes
+curl -s https://<KAMAJI_API_SERVER>/apis/kamaji.clastix.io/v1alpha1/namespaces/<NAMESPACE>/tenantcontrolplanes \
+  -H "Authorization: Bearer <YOUR_ACCESS_TOKEN>"
 ```
 
 - **Dettagli TCP Specifico**:
 ```bash
-curl -s http://127.0.0.1:8001/apis/kamaji.clastix.io/v1alpha1/namespaces/default/tenantcontrolplanes/tenant-test
+curl -s https://<KAMAJI_API_SERVER>/apis/kamaji.clastix.io/v1alpha1/namespaces/default/tenantcontrolplanes/<TENANT_NAME> \
+  -H "Authorization: Bearer <YOUR_ACCESS_TOKEN>"
 ```
 
 - **Deployments**:
 ```bash
-curl -s http://127.0.0.1:8001/apis/apps/v1/namespaces/default/deployments
+curl -s https://<KAMAJI_API_SERVER>/apis/apps/v1/namespaces/default/deployments \
+  -H "Authorization: Bearer <YOUR_ACCESS_TOKEN>"
 ```
 
 - **Pods**:
 ```bash
-curl -s http://127.0.0.1:8001/api/v1/namespaces/default/pods
+curl -s https://<KAMAJI_API_SERVER>/api/v1/namespaces/default/pods \
+  -H "Authorization: Bearer <YOUR_ACCESS_TOKEN>"
 ```
 
 - **Services**:
 ```bash
-curl -s http://127.0.0.1:8001/api/v1/namespaces/default/services
+curl -s https://<KAMAJI_API_SERVER>/api/v1/namespaces/default/services \
+  -H "Authorization: Bearer <YOUR_ACCESS_TOKEN>"
 ```
 
 - **Nodes**:
 ```bash
-curl -s http://127.0.0.1:8001/api/v1/nodes
+curl -s https://<KAMAJI_API_SERVER>/api/v1/nodes \
+  -H "Authorization: Bearer <YOUR_ACCESS_TOKEN>"
 ```
 
 ## 2. Gestione VM Proxmox
@@ -131,7 +144,7 @@ curl -s http://127.0.0.1:8001/api/v1/nodes
 
 L'autenticazione alle API Proxmox richiede un token API strutturato come segue:
 
-(! nei dati )
+> **⚠️ Importante**: Il token ID deve essere separato dal realm utilizzando il carattere `!`
 
 ```bash
 PVEAPIToken=<USER>@<REALM>!<TOKEN_ID>=<SECRET>
@@ -139,11 +152,30 @@ PVEAPIToken=<USER>@<REALM>!<TOKEN_ID>=<SECRET>
 
 ### 2.2 Operazioni sulle VM
 
-#### Creazione VM
+#### Lista Nodi
 ```bash
-curl -X POST "https://<PROXMOX_BASE_URL>/api2/json/nodes/<NODE_NAME>/qemu" \
-     -H "Authorization: PVEAPIToken>" \
-     -d "vmid=100" \
+curl -X GET -k 'https://<PROXMOX_HOST>:8006/api2/json/nodes' \
+     -H 'Authorization: PVEAPIToken=<USER>@<REALM>!<TOKEN_ID>=<SECRET>'
+```
+
+#### Informazioni VM
+```bash
+curl -X GET -k 'https://<PROXMOX_HOST>:8006/api2/json/nodes/<NODE_NAME>/qemu/<VMID>/<SPEC>' \
+     -H 'Authorization: PVEAPIToken=<USER>@<REALM>!<TOKEN_ID>=<SECRET>'
+```
+
+> **Note**: Valori possibili per `<SPEC>`: config, cloudinit, pending, status, unlink, vncproxy, termproxy, migrate, resize, move, rrd, rrddata, monitor, agent, snapshot, spiceproxy, sendkey, firewall, mtunnel, remote_migrate
+
+#### Creazione VM
+
+> **⚠️ Attenzione**: 
+> - Se l'ID VM esiste già, l'API risponderà con errore 500
+> - In caso di successo, viene restituito un UPID (Unique Process ID)
+
+```bash
+curl -X POST -k "https://<PROXMOX_HOST>:8006/api2/json/nodes/<NODE_NAME>/qemu" \
+     -H 'Authorization: PVEAPIToken=<USER>@<REALM>!<TOKEN_ID>=<SECRET>' \
+     -d "vmid=<VM_ID>" \
      -d "cores=2" \
      -d "memory=4096"
 ```
@@ -152,29 +184,29 @@ curl -X POST "https://<PROXMOX_BASE_URL>/api2/json/nodes/<NODE_NAME>/qemu" \
 
 - **Eliminazione**:
 ```bash
-curl -X DELETE "https://<PROXMOX_BASE_URL>/api2/json/nodes/<NODE_NAME>/qemu/<VMID>" \
-     -H "Authorization: PVEAPIToken"
+curl -X DELETE -k "https://<PROXMOX_HOST>:8006/api2/json/nodes/<NODE_NAME>/qemu/<VMID>" \
+     -H "Authorization: PVEAPIToken=<USER>@<REALM>!<TOKEN_ID>=<SECRET>"
 ```
 
 - **Modifica Configurazione**:
 ```bash
-curl -X POST "https://<PROXMOX_BASE_URL>/api2/json/nodes/<NODE_NAME>/qemu/<VMID>/config" \
-     -H "Authorization: PVEAPIToken" \
+curl -X POST "https://<PROXMOX_HOST>:8006/api2/json/nodes/<NODE_NAME>/qemu/<VMID>/config" \
+     -H "Authorization: PVEAPIToken=<USER>@<REALM>!<TOKEN_ID>=<SECRET>" \
      -d "cores=4" \
      -d "memory=8192"
 ```
 
 - **Controllo Stato** (start/stop/reset):
 ```bash
-curl -X POST "https://<PROXMOX_BASE_URL>/api2/extjs/nodes/<NODE_NAME>/qemu/<VMID>/status/start" \
-     -H "Authorization: PVEAPIToken"
+curl -X POST "https://<PROXMOX_HOST>:8006/api2/extjs/nodes/<NODE_NAME>/qemu/<VMID>/status/start" \
+     -H "Authorization: PVEAPIToken=<USER>@<REALM>!<TOKEN_ID>=<SECRET>"
 ```
 
 - **Clonazione**:
 ```bash
-curl -X POST "https://<PROXMOX_BASE_URL>/api2/json/nodes/<NODE_NAME>/qemu/<SOURCE_VMID>/clone" \
-     -H "Authorization: PVEAPIToken" \
-     -d "newid=200" \
+curl -X POST "https://<PROXMOX_HOST>:8006/api2/json/nodes/<NODE_NAME>/qemu/<SOURCE_VMID>/clone" \
+     -H "Authorization: PVEAPIToken=<USER>@<REALM>!<TOKEN_ID>=<SECRET>" \
+     -d "newid=<NEW_VMID>" \
      -d "full=1" \
      -d "storage=<STORAGE_NAME>"
 ```
@@ -183,11 +215,11 @@ curl -X POST "https://<PROXMOX_BASE_URL>/api2/json/nodes/<NODE_NAME>/qemu/<SOURC
 
 #### Status VM
 ```bash
-curl -X GET "https://<PROXMOX_BASE_URL>/api2/extjs/nodes/<NODE_NAME>/qemu/<VMID>/status/current" \
-     -H "Authorization: PVEAPIToken"
+curl -X GET "https://<PROXMOX_HOST>:8006/api2/extjs/nodes/<NODE_NAME>/qemu/<VMID>/status/current" \
+     -H "Authorization: PVEAPIToken=<USER>@<REALM>!<TOKEN_ID>=<SECRET>"
 ```
 
 #### Metriche Cluster
 ```bash
-curl -X GET "https://<PROXMOX_BASE_URL>/api2/extjs/cluster/resources?type=vm" \
-     -H "Authorization: PVEAPIToken"
+curl -X GET "https://<PROXMOX_HOST>:8006/api2/extjs/cluster/resources?type=vm" \
+     -H "Authorization: PVEAPIToken=<USER>@<REALM>!<TOKEN_ID>=<SECRET>"
