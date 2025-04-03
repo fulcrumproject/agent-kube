@@ -1,8 +1,8 @@
 @proxmoxHost = 172.30.232.90:8006
 @nodeName = pve
-@vmId = 8002
-@newVmId = 8002
-@storageName = local
+@vmId = 20002
+@newVmId = 10001
+@storageName = local-lvm
 @user = root
 @realm = pam
 @tokenId = auth
@@ -38,10 +38,10 @@ DELETE https://{{proxmoxHost}}/api2/json/nodes/{{nodeName}}/qemu/{{vmId}}
 Authorization: PVEAPIToken={{authToken}}
 
 ### Modifica Configurazione VM
-POST https://{{proxmoxHost}}/api2/json/nodes/{{nodeName}}/qemu/{{vmId}}/config
+GET https://{{proxmoxHost}}/api2/json/nodes/{{nodeName}}/qemu/{{vmId}}/config
 Authorization: PVEAPIToken={{authToken}}
 Content-Type: application/x-www-form-urlencoded
-
+###
 cores=2&memory=8192&cicustom=vendor=NFS-SHARE:snippets/cloud-init-test1.yaml&username=provaCustomUser&passwors=Testudo123!
 
 

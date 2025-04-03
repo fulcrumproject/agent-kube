@@ -1,0 +1,51 @@
+@kamajiServer = 172.30.232.61:6443
+@tenantTestServer = 172.30.232.66:6443
+@accessToken = eyJhbGciOiJSUzI1NiIsImtpZCI6IlFIdVRkcmRSMEZ3cWp6TGVNSEZJQ0VidS1mZlI0YTBBNmlrYXVkUFNqc3MifQ.eyJhdWQiOlsiaHR0cHM6Ly9rdWJlcm5ldGVzLmRlZmF1bHQuc3ZjLmNsdXN0ZXIubG9jYWwiXSwiZXhwIjoxNzQzNjc3OTU2LCJpYXQiOjE3NDM2NzQzNTYsImlzcyI6Imh0dHBzOi8va3ViZXJuZXRlcy5kZWZhdWx0LnN2Yy5jbHVzdGVyLmxvY2FsIiwianRpIjoiYzBiMWFhMDUtODQyMC00MzkyLTgwZDItY2RmNjlhMDdiMDUwIiwia3ViZXJuZXRlcy5pbyI6eyJuYW1lc3BhY2UiOiJrdWJlLXN5c3RlbSIsInNlcnZpY2VhY2NvdW50Ijp7Im5hbWUiOiJhcGktYWNjZXNzIiwidWlkIjoiMTNjYTM5ZTctOThlZS00YjAzLTk4ZWQtMjQ3MzI4MWM2NTQzIn19LCJuYmYiOjE3NDM2NzQzNTYsInN1YiI6InN5c3RlbTpzZXJ2aWNlYWNjb3VudDprdWJlLXN5c3RlbTphcGktYWNjZXNzIn0.BC0eXxJcdSgnGQGW6YAm0VA-3Q-UYqEAvRPOrLqPHMDdzACFyrwj4bN6G16FaxeJSMm8h_ELyfAHH2f1cWwspzp-8uajcs8ngVr-tMUNg4GSD-6JW5_bfFAzDrNW3coAoDIEzj56vy75MNN7ALKuUdNcUV-8Dlo-ORJMQA_yjRh6nkGotX2UjmkIfQmbOvU9ru5Y8i-dhhaZ8-ERZJ12JJuBdnMboG97yBNM-HGClYK1DBK0gyVEt4TCjL7N1dIqanHBr4Dej-4nnorhjs2lF5e7bEMt07r_kQCdRhSyVj-JTI8DYQYBjrsmyXfX4VB-sV9oUaKHj3okNJtUBm635A
+@namespace = default
+@tenantName = tenant-test
+
+#token hardcoded in quando li generiamo noi rispettando 6 e 16 caratteri hex
+# 123456
+@tokenId_BASE64 = MTIzNDU2
+# 0123456789abcdef
+@tokenSecret_BASE64 = MDEyMzQ1Njc4OWFiY2RlZg==
+# 2025-05-01T10:00:00Z
+@expiration_BASE64 = MjAyNS0wNS0wMVQxMDowMDowMFo=
+# true
+@bootstrapAuth_BASE64 = dHJ1ZQ==
+# true
+@bootstrapSigning_BASE64 = dHJ1ZQ==
+# system:bootstrappers:kubeadm:default-node-token
+@bootstrapGroups_BASE64 = c3lzdGVtOmJvb3RzdHJhcHBlcnM6a3ViZWFkbTpkZWZhdWx0LW5vZGUtdG9rZW4=
+
+
+
+### Get secret 
+GET https://{{kamajiServer}}/api/v1/namespaces/{{namespace}}/secrets/{{tenantName}}-admin-kubeconfig
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+#restituisce getSecret.json:
+#decodificare da base64 il campo data[admin.conf] per ottenere il kubeconfig del tenant
+
+### Get token 
+POST https://{{tenantTestServer}}/api/v1/namespaces/kube-system/secrets
+Content-Type: application/json
+kubeconfig: ./tenant-test-admin-kubeconfig.yaml
+
+{
+   "apiVersion": "v1",
+    "kind": "Secret",
+    "metadata": {
+      "name": "bootstrap-token-TOKEN_ID",
+      "namespace": "kube-system"
+    },
+    "type": "bootstrap.kubernetes.io/token",
+    "data": {
+      "token-id": {{tokenId_BASE64}},
+      "token-secret": {{tokenSecret_BASE64}},
+      "expiration": {{expiration_BASE64}},
+      "usage-bootstrap-authentication": {{bootstrapAuth_BASE64}},
+      "usage-bootstrap-signing": {{bootstrapSigning_BASE64}},
+    }
+}

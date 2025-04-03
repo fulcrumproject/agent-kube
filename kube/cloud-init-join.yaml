@@ -63,12 +63,5 @@ runcmd:
   - chmod 600 /etc/kamaji/kubeconfig
   - export KUBECONFIG=/etc/kamaji/kubeconfig
   - apt install -y curl jq || true
-  - |
-      JOIN_CMD=$(kubectl get secret -n kamaji <kamaji-join-secret> -o jsonpath="{.data.kubeadm-join-command}" | base64 -d)
-      if [ -n "$JOIN_CMD" ]; then
-        $JOIN_CMD || true
-      else
-        echo "Kamaji join command not found!"
-      fi
-
+  - curl -sfL https://goyaki.clastix.io | sudo JOIN_URL=172.30.232.66:6443 JOIN_TOKEN=trwpz3.ufe0npfxr5m8ob9s JOIN_TOKEN_CACERT_HASH=sha256:d900d6f505f17569537b03fe8bec8b67f1d051886c918c50c19e25d988ecdce6 JOIN_ASCP=1 KUBERNETES_VERSION=v1.30.5 bash -s join
   - reboot || true
