@@ -31,7 +31,7 @@ kubeadm --kubeconfig=${TENANT_NAMESPACE}-${TENANT_NAME}.kubeconfig token create 
 kubeadm join 172.30.232.66:6443 --token trwpz3.ufe0npfxr5m8ob9s --discovery-token-ca-cert-hash sha256:d900d6f505f17569537b03fe8bec8b67f1d051886c918c50c19e25d988ecdce6
 
 sudo apt install conntrack socat
-curl -sfL https://goyaki.clastix.io | sudo JOIN_URL=172.30.232.66:6443 JOIN_TOKEN=trwpz3.ufe0npfxr5m8ob9s JOIN_TOKEN_CACERT_HASH=sha256:d900d6f505f17569537b03fe8bec8b67f1d051886c918c50c19e25d988ecdce6 JOIN_ASCP=1 KUBERNETES_VERSION=v1.30.5 bash -s join
+curl -sfL https://goyaki.clastix.io | sudo JOIN_URL=172.30.232.66:6443 JOIN_TOKEN=2b8393.88e3bde22cfc9521 JOIN_TOKEN_CACERT_HASH=sha256:d900d6f505f17569537b03fe8bec8b67f1d051886c918c50c19e25d988ecdce6 JOIN_ASCP=1 KUBERNETES_VERSION=v1.30.5 bash -s join
 
 kubectl --kubeconfig=${TENANT_NAMESPACE}-${TENANT_NAME}.kubeconfig get nodes
 
