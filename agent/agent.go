@@ -7,38 +7,32 @@ import (
 	"sync"
 	"time"
 
-	"fulcrumproject.org/test-agent/config"
+	"fulcrumproject.org/kube-agent/config"
 )
 
-// Agent is the main test agent implementation
+// Agent is the main agent implementation
 type Agent struct {
-	cfg             *config.Config
-	client          FulcrumClient
-	jobHandler      *JobHandler
-	vmManager       *VMManager
-	metricsReporter *MetricsReporter
-	stopCh          chan struct{}
-	wg              sync.WaitGroup
-	startTime       time.Time
-	connected       bool
-	agentID         string
+	cfg        *config.Config
+	client     FulcrumClient
+	jobHandler *JobHandler
+	stopCh     chan struct{}
+	wg         sync.WaitGroup
+	startTime  time.Time
+	connected  bool
+	agentID    string
 }
 
-// New creates a new test agent
-func New(cfg *config.Config) (*Agent, error) {
-	client := NewHTTPFulcrumClient(cfg.FulcrumAPIURL, cfg.AgentToken)
-	vmManager := NewVMManager(cfg)
-	jobHandler := NewJobHandler(client, vmManager)
-	metricsReporter := NewMetricsReporter(client, vmManager)
+// New creates a new agent
+func New(
+	client FulcrumClient,
+) (*Agent, error) {
+	jobHandler := NewJobHandler(client)
 
 	return &Agent{
-		cfg:             cfg,
-		client:          client,
-		jobHandler:      jobHandler,
-		vmManager:       vmManager,
-		metricsReporter: metricsReporter,
-		stopCh:          make(chan struct{}),
-		connected:       false,
+		client:     client,
+		jobHandler: jobHandler,
+		stopCh:     make(chan struct{}),
+		connected:  false,
 	}, nil
 }
 
@@ -72,10 +66,6 @@ func (a *Agent) Start(ctx context.Context) error {
 	// Start a simple background heartbeat to keep the agent alive
 	a.wg.Add(1)
 	go a.heartbeat(ctx)
-
-	// Start VM resource updater background task
-	a.wg.Add(1)
-	go a.updateVMResources(ctx)
 
 	// Start metrics reporting background task
 	a.wg.Add(1)
@@ -111,25 +101,6 @@ func (a *Agent) heartbeat(ctx context.Context) {
 	}
 }
 
-// updateVMResources periodically updates the resource utilization of running VMs
-func (a *Agent) updateVMResources(ctx context.Context) {
-	defer a.wg.Done()
-
-	ticker := time.NewTicker(a.cfg.VMUpdateInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			a.vmManager.UpdateVMResources()
-		case <-a.stopCh:
-			return
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
 // reportMetrics periodically reports collected metrics
 func (a *Agent) reportMetrics(ctx context.Context) {
 	defer a.wg.Done()
@@ -140,10 +111,10 @@ func (a *Agent) reportMetrics(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			_, err := a.metricsReporter.Report()
-			if err != nil {
-				log.Printf("Error reporting metrics: %v", err)
-			}
+			// _, err := a.metricsReporter.Report()
+			// if err != nil {
+			// 	log.Printf("Error reporting metrics: %v", err)
+			// }
 		case <-a.stopCh:
 			return
 		case <-ctx.Done():
@@ -210,19 +181,4 @@ func (a *Agent) Shutdown(ctx context.Context) error {
 // GetAgentID returns the agent's ID
 func (a *Agent) GetAgentID() string {
 	return a.agentID
-}
-
-// GetUptime returns the agent's uptime
-func (a *Agent) GetUptime() time.Duration {
-	return time.Since(a.startTime)
-}
-
-// GetVMStateCounts returns the count of VMs in each state
-func (a *Agent) GetVMStateCounts() map[VMState]int {
-	return a.vmManager.GetStateCounts()
-}
-
-// GetJobStats returns the job processing statistics
-func (a *Agent) GetJobStats() (processed, succeeded, failed int) {
-	return a.jobHandler.GetStats()
 }

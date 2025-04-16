@@ -9,13 +9,7 @@ import (
 
 // JobHandler processes jobs from the Fulcrum Core job queue
 type JobHandler struct {
-	client    FulcrumClient
-	vmManager *VMManager
-	stats     struct {
-		processed int
-		succeeded int
-		failed    int
-	}
+	client FulcrumClient
 }
 
 // JobResources represents the resources in a job response
@@ -29,16 +23,10 @@ type JobResponse struct {
 	ExternalID *string      `json:"externalId"`
 }
 
-type VMProps struct {
-	CPU    int `json:"cpu"`
-	Memory int `json:"memory"`
-}
-
 // NewJobHandler creates a new job handler
-func NewJobHandler(client FulcrumClient, vmManager *VMManager) *JobHandler {
+func NewJobHandler(client FulcrumClient) *JobHandler {
 	return &JobHandler{
-		client:    client,
-		vmManager: vmManager,
+		client: client,
 	}
 }
 
@@ -57,11 +45,9 @@ func (h *JobHandler) PollAndProcessJobs() error {
 	// First
 	job := jobs[0]
 	// Increment processed count
-	h.stats.processed++
 	// Claim the job
 	if err := h.client.ClaimJob(job.ID); err != nil {
 		log.Printf("Failed to claim job %s: %v", job.ID, err)
-		h.stats.failed++
 		return err
 	}
 	log.Printf("Processing job %s of type %s", job.ID, job.Action)
@@ -70,7 +56,6 @@ func (h *JobHandler) PollAndProcessJobs() error {
 	if err != nil {
 		// Mark job as failed
 		log.Printf("Job %s failed: %v", job.ID, err)
-		h.stats.failed++
 
 		if failErr := h.client.FailJob(job.ID, err.Error()); failErr != nil {
 			log.Printf("Failed to mark job %s as failed: %v", job.ID, failErr)
@@ -82,7 +67,6 @@ func (h *JobHandler) PollAndProcessJobs() error {
 			log.Printf("Failed to mark job %s as completed: %v", job.ID, complErr)
 			return complErr
 		}
-		h.stats.succeeded++
 		log.Printf("Job %s completed successfully", job.ID)
 	}
 
@@ -93,66 +77,16 @@ func (h *JobHandler) PollAndProcessJobs() error {
 func (h *JobHandler) processJob(job *Job) (any, error) {
 	switch job.Action {
 	case JobActionServiceCreate:
-		return h.createVM(job)
+		return nil, errors.New("not supported")
 	case JobActionServiceColdUpdate, JobActionServiceHotUpdate:
-		return h.vmUpdate(job)
+		return nil, errors.New("not supported")
 	case JobActionServiceStart:
-		return vmAction(job, h.vmManager.StartVM)
+		return nil, errors.New("not supported")
 	case JobActionServiceStop:
-		return vmAction(job, h.vmManager.StopVM)
+		return nil, errors.New("not supported")
 	case JobActionServiceDelete:
-		return vmAction(job, h.vmManager.DeleteVM)
+		return nil, errors.New("not supported")
 	default:
 		return nil, fmt.Errorf("unknown job type: %s", job.Action)
 	}
-}
-
-func (h *JobHandler) createVM(job *Job) (any, error) {
-	if job.Service.TargetProperties == nil {
-		return nil, errors.New("missing target properties")
-	}
-	props := *job.Service.TargetProperties
-	vm, err := h.vmManager.CreateVM(job.Service.Name, props.CPU, props.Memory)
-	if err != nil {
-		return nil, err
-	}
-	return JobResponse{
-		Resources:  JobResources{TS: time.Time{}},
-		ExternalID: &vm.ID,
-	}, nil
-}
-
-func (h *JobHandler) vmUpdate(job *Job) (any, error) {
-	if job.Service.TargetProperties == nil {
-		return nil, errors.New("missing target properties")
-	}
-	props := *job.Service.TargetProperties
-	if job.Service.ExternalID == nil {
-		return nil, errors.New("missing externalId")
-	}
-	err := h.vmManager.UpdateVM(*job.Service.ExternalID, job.Service.Name, props.CPU, props.Memory)
-	if err != nil {
-		return nil, err
-	}
-	return JobResponse{
-		Resources: JobResources{TS: time.Time{}},
-	}, nil
-}
-
-func vmAction(job *Job, action func(string) error) (any, error) {
-	if job.Service.ExternalID == nil {
-		return nil, errors.New("missing externalId")
-	}
-	err := action(*job.Service.ExternalID)
-	if err != nil {
-		return nil, err
-	}
-	return JobResponse{
-		Resources: JobResources{TS: time.Time{}},
-	}, nil
-}
-
-// GetStats returns the job processing statistics
-func (h *JobHandler) GetStats() (processed, succeeded, failed int) {
-	return h.stats.processed, h.stats.succeeded, h.stats.failed
 }

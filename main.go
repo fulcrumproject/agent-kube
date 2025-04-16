@@ -9,8 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	"fulcrumproject.org/test-agent/agent"
-	"fulcrumproject.org/test-agent/config"
+	"fulcrumproject.org/kube-agent/agent"
+	"fulcrumproject.org/kube-agent/config"
+	"fulcrumproject.org/kube-agent/fulcrum"
 )
 
 func main() {
@@ -42,18 +43,18 @@ func main() {
 		log.Printf("Applied environment variable overrides")
 	}
 
-	// Print configuration
-	log.Printf("Config %#v", cfg)
-
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
 		log.Fatalf("Invalid configuration: %v", err)
 	}
 
-	log.Printf("Starting test agent with Fulcrum API at %s", cfg.FulcrumAPIURL)
+	log.Println("Starting agent ...")
+
+	// Clients
+	fulcrumCli := fulcrum.NewHTTPFulcrumClient(cfg.FulcrumAPIURL, cfg.AgentToken)
 
 	// Create and start the agent
-	testAgent, err := agent.New(cfg)
+	testAgent, err := agent.New(fulcrumCli)
 	if err != nil {
 		log.Fatalf("Failed to create agent: %v", err)
 	}
@@ -71,29 +72,8 @@ func main() {
 		log.Fatalf("Failed to start agent: %v", err)
 	}
 
-	log.Printf("Test agent started successfully (Agent ID: %s)", testAgent.GetAgentID())
+	log.Printf("Agent started successfully (Agent ID: %s)", testAgent.GetAgentID())
 	log.Printf("Press Ctrl+C to stop the agent")
-
-	// Start a background goroutine to periodically display VM state counts
-	go func() {
-		displayTicker := time.NewTicker(30 * time.Second)
-		defer displayTicker.Stop()
-		for {
-			select {
-			case <-displayTicker.C:
-				// Display VM state counts
-				stateCounts := testAgent.GetVMStateCounts()
-				log.Printf("VM States: %v", stateCounts)
-
-				// Display job statistics
-				processed, succeeded, failed := testAgent.GetJobStats()
-				log.Printf("Jobs: Processed: %d, Succeeded: %d, Failed: %d",
-					processed, succeeded, failed)
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
 
 	// Wait for termination signal
 	<-sigCh
@@ -108,14 +88,5 @@ func main() {
 		log.Fatalf("Error during shutdown: %v", err)
 	}
 
-	// Display final job statistics
-	processed, succeeded, failed := testAgent.GetJobStats()
-	log.Printf("Final Job Statistics: Processed: %d, Succeeded: %d, Failed: %d", processed, succeeded, failed)
-
-	// Display final VM state counts
-	stateCounts := testAgent.GetVMStateCounts()
-	if len(stateCounts) > 0 {
-		log.Printf("Final VM States: %v", stateCounts)
-	}
-	log.Printf("Agent uptime: %s", testAgent.GetUptime().Round(time.Second))
+	log.Println("Agent shutdown succesfully.")
 }
