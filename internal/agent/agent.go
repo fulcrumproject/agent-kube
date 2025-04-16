@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"fulcrumproject.org/kube-agent/config"
+	"fulcrumproject.org/kube-agent/internal/config"
 )
 
 // Agent is the main agent implementation

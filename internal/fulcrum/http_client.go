@@ -9,7 +9,7 @@ import (
 	"path"
 	"time"
 
-	"fulcrumproject.org/kube-agent/agent"
+	"fulcrumproject.org/kube-agent/internal/agent"
 )
 
 // HTTPFulcrumClient implements FulcrumClient interface using HTTP

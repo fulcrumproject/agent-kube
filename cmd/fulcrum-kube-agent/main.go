@@ -9,9 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	"fulcrumproject.org/kube-agent/agent"
-	"fulcrumproject.org/kube-agent/config"
-	"fulcrumproject.org/kube-agent/fulcrum"
+	"fulcrumproject.org/kube-agent/internal/agent"
+	"fulcrumproject.org/kube-agent/internal/config"
+	"fulcrumproject.org/kube-agent/internal/fulcrum"
 )
 
 func main() {
