@@ -29,6 +29,9 @@ type Config struct {
 	// Kubernetes
 	KubeAPIURL   string `json:"kubeApiUrl" env:"KUBE_API_URL"`
 	KubeAPIToken string `json:"kubeApiToken" env:"KUBE_API_SECRET"`
+
+	// Client HTTP
+	SkipTLSVerify bool `json:"skipTlsVerify" env:"SKIP_TLS_VERIFY"` // Skip TLS certificate validation
 }
 
 // DefaultConfig returns the default configuration
@@ -36,6 +39,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		AgentToken:           "", // Must be provided
 		FulcrumAPIURL:        "http://localhost:3000",
+		SkipTLSVerify:        false, // By default, verify TLS certificates
 		JobPollInterval:      5 * time.Second,
 		MetricReportInterval: 30 * time.Second,
 	}

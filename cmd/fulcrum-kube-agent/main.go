@@ -11,7 +11,7 @@ import (
 
 	"fulcrumproject.org/kube-agent/internal/agent"
 	"fulcrumproject.org/kube-agent/internal/config"
-	"fulcrumproject.org/kube-agent/internal/fulcrum"
+	"fulcrumproject.org/kube-agent/internal/webapi"
 )
 
 func main() {
@@ -51,7 +51,7 @@ func main() {
 	log.Println("Starting agent ...")
 
 	// Clients
-	fulcrumCli := fulcrum.NewHTTPFulcrumClient(cfg.FulcrumAPIURL, cfg.AgentToken)
+	fulcrumCli := webapi.NewFulcrumClient(cfg.FulcrumAPIURL, cfg.AgentToken, webapi.WithSkipTLSVerify(cfg.SkipTLSVerify))
 
 	// Create and start the agent
 	testAgent, err := agent.New(fulcrumCli)
