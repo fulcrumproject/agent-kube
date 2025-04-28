@@ -1,4 +1,4 @@
-package webapi
+package httpapi
 
 import (
 	"encoding/json"
@@ -10,11 +10,11 @@ import (
 
 // HTTPFulcrumClient implements FulcrumClient interface using HTTP
 type HTTPFulcrumClient struct {
-	httpClient *HTTPClient
+	httpClient *Client
 }
 
 // NewFulcrumClient creates a new Fulcrum API client
-func NewFulcrumClient(baseURL string, token string, options ...HTTPClientOption) *HTTPFulcrumClient {
+func NewFulcrumClient(baseURL string, token string, options ...ClientOption) *HTTPFulcrumClient {
 	return &HTTPFulcrumClient{
 		httpClient: NewHTTPClient(baseURL, token, options...),
 	}
