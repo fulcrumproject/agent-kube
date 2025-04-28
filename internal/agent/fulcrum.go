@@ -22,6 +22,29 @@ const (
 	JobStateFailed     JobState = "Failed"
 )
 
+// NodeState
+type NodeState string
+
+const (
+	NodeStateOn  NodeState = "On"
+	NodeStateOff NodeState = "Off"
+)
+
+// NodeSize
+type NodeSize string
+
+const (
+	NodeSizeS1 NodeSize = "s1"
+	NodeSizeS2 NodeSize = "s2"
+	NodeSizeS4 NodeSize = "s4"
+)
+
+type Node struct {
+	ID    string    `json:"id"`
+	Size  NodeSize  `json:"size"`
+	State NodeState `json:"state"`
+}
+
 // Job represents a job from the Fulcrum Core job queue
 type Job struct {
 	ID       string    `json:"id"`
@@ -33,12 +56,10 @@ type Job struct {
 		Name              string  `json:"name"`
 		ExternalID        *string `json:"externalId"`
 		CurrentProperties *struct {
-			CPU    int `json:"cpu"`
-			Memory int `json:"memory"`
+			Nodes []Node `json:"nodes"`
 		} `json:"currentProperties"`
 		TargetProperties *struct {
-			CPU    int `json:"cpu"`
-			Memory int `json:"memory"`
+			Nodes []Node `json:"nodes"`
 		} `json:"targetProperties"`
 	} `json:"service"`
 }
