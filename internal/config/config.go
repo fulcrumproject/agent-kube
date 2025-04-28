@@ -34,38 +34,6 @@ type Config struct {
 	SkipTLSVerify bool `json:"skipTlsVerify" env:"SKIP_TLS_VERIFY"` // Skip TLS certificate validation
 }
 
-// DefaultConfig returns the default configuration
-func DefaultConfig() *Config {
-	return &Config{
-		AgentToken:           "", // Must be provided
-		FulcrumAPIURL:        "http://localhost:3000",
-		SkipTLSVerify:        false, // By default, verify TLS certificates
-		JobPollInterval:      5 * time.Second,
-		MetricReportInterval: 30 * time.Second,
-	}
-}
-
-// LoadFromFile loads configuration from a JSON file
-func LoadFromFile(filepath string) (*Config, error) {
-	cfg := DefaultConfig()
-
-	data, err := os.ReadFile(filepath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
-	}
-
-	if err := json.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
-	}
-
-	return cfg, nil
-}
-
-// LoadFromEnv overrides configuration with environment variables
-func (c *Config) LoadFromEnv() error {
-	return LoadEnvToStruct(c, "FULCRUM_AGENT_", "env")
-}
-
 // Validate checks if the configuration is valid
 func (c *Config) Validate() error {
 	if c.AgentToken == "" {
@@ -101,4 +69,73 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// ConfigBuilder implements a builder pattern for creating Config instances
+type ConfigBuilder struct {
+	config *Config
+	err    error
+}
+
+// Default returns a ConfigBuilder with default configuration
+func Builder() *ConfigBuilder {
+	return &ConfigBuilder{
+		config: &Config{
+			AgentToken:           "", // Must be provided
+			FulcrumAPIURL:        "http://localhost:3000",
+			SkipTLSVerify:        false, // By default, verify TLS certificates
+			JobPollInterval:      5 * time.Second,
+			MetricReportInterval: 30 * time.Second,
+		},
+	}
+}
+
+// LoadFile loads configuration from a JSON file
+func (b *ConfigBuilder) LoadFile(filepath *string) *ConfigBuilder {
+	if b.err != nil {
+		return b
+	}
+
+	if filepath == nil || *filepath == "" {
+		return b
+	}
+
+	data, err := os.ReadFile(*filepath)
+	if err != nil {
+		b.err = fmt.Errorf("failed to read config file: %w", err)
+		return b
+	}
+
+	if err := json.Unmarshal(data, b.config); err != nil {
+		b.err = fmt.Errorf("failed to parse config file: %w", err)
+		return b
+	}
+
+	return b
+}
+
+// WithEnv overrides configuration from environment variables
+func (b *ConfigBuilder) WithEnv() *ConfigBuilder {
+	if b.err != nil {
+		return b
+	}
+
+	if err := LoadEnvToStruct(b.config, "FULCRUM_AGENT_", "env"); err != nil {
+		b.err = fmt.Errorf("failed to override configuration from environment: %w", err)
+	}
+
+	return b
+}
+
+// Build validates and returns the final Config
+func (b *ConfigBuilder) Build() (*Config, error) {
+	if b.err != nil {
+		return nil, b.err
+	}
+
+	if err := b.config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+
+	return b.config, nil
 }

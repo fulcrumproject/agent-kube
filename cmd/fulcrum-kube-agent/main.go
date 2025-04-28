@@ -19,32 +19,8 @@ func main() {
 	configPath := flag.String("config", "", "Path to configuration file")
 	flag.Parse()
 
-	// Load configuration
-	var cfg *config.Config
-	var err error
-
-	if *configPath != "" {
-		// Load from file if specified
-		cfg, err = config.LoadFromFile(*configPath)
-		if err != nil {
-			log.Fatalf("Failed to load configuration from file: %v", err)
-		}
-		log.Printf("Loaded configuration from %s", *configPath)
-	} else {
-		// Use default configuration
-		cfg = config.DefaultConfig()
-		log.Printf("Using default configuration")
-	}
-
-	// Override with environment variables
-	if err := cfg.LoadFromEnv(); err != nil {
-		log.Fatalf("Failed to load configuration from environment: %v", err)
-	} else {
-		log.Printf("Applied environment variable overrides")
-	}
-
-	// Validate configuration
-	if err := cfg.Validate(); err != nil {
+	cfg, err := config.Builder().LoadFile(configPath).WithEnv().Build()
+	if err != nil {
 		log.Fatalf("Invalid configuration: %v", err)
 	}
 
