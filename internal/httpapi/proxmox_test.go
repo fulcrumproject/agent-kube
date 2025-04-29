@@ -113,4 +113,26 @@ func TestVMIntegration(t *testing.T) {
 		t.Logf("VM deleted successfully")
 	})
 
+	t.Run("Clone Non-Existent Template", func(t *testing.T) {
+		// Generate a test VM ID
+		testVMID := generateTestVMID()
+
+		// Define test VM name
+		vmName := fmt.Sprintf("nonexistent-test-vm-%d", testVMID)
+
+		// Use a very high template ID that is unlikely to exist
+		nonExistentTemplateID := 999999
+
+		t.Logf("Testing clone of non-existent template: %d to new VM %d with name %s",
+			nonExistentTemplateID, testVMID, vmName)
+
+		// Attempt to clone the VM from a non-existent template
+		cloneResp, err := cli.CloneVM(nonExistentTemplateID, testVMID, vmName)
+
+		// Should return an error
+		assert.Error(t, err, "CloneVM with non-existent template should return an error")
+		assert.Nil(t, cloneResp, "CloneVM with non-existent template should return nil response")
+
+		t.Logf("Correctly failed to clone non-existent template with error: %v", err)
+	})
 }
