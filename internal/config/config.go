@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 // Config holds the configuration for the agent
@@ -119,6 +121,9 @@ func (b *ConfigBuilder) WithEnv() *ConfigBuilder {
 	if b.err != nil {
 		return b
 	}
+
+	_ = godotenv.Load(".env.local")
+	_ = godotenv.Load("../../.env")
 
 	if err := LoadEnvToStruct(b.config, "FULCRUM_AGENT_", "env"); err != nil {
 		b.err = fmt.Errorf("failed to override configuration from environment: %w", err)

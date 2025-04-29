@@ -1,101 +1,54 @@
 package agent
 
+import (
+	"time"
+)
+
 // ProxmoxClient defines the interface for interacting with Proxmox VE API
 type ProxmoxClient interface {
 	// CloneVM creates a new VM by cloning from a template
-	CloneVM(templateID int, newVMID int, name string) (*VMCloneResponse, error)
+	CloneVM(templateID int, newVMID int, name string) (*TaskResponse, error)
 
 	// ConfigureVM configures a VM (CPU, memory, cloud-init)
-	ConfigureVM(vmID int, cores int, memory int, cloudInitConfig string) error
+	ConfigureVM(vmID int, cores int, memory int, cloudInitConfig string) (*TaskResponse, error)
 
 	// StartVM starts a virtual machine
-	StartVM(vmID int) error
+	StartVM(vmID int) (*TaskResponse, error)
 
 	// StopVM stops a virtual machine
-	StopVM(vmID int) error
+	StopVM(vmID int) (*TaskResponse, error)
 
 	// DeleteVM deletes a virtual machine
-	DeleteVM(vmID int) error
+	DeleteVM(vmID int) (*TaskResponse, error)
 
-	// GetVMInfo gets information about a VM
-	GetVMInfo(vmID int) (*VMInfo, error)
+	// WaitForTask waits for a task to complete and returns the task's status
+	WaitForTask(taskID string, timeout time.Duration) (*TaskStatus, error)
 
-	// GetVMNetworkInterfaces gets network interface information from a VM
-	GetVMNetworkInterfaces(vmID int) ([]VMNetworkInterface, error)
-
-	// GetVMStatus gets the current status of a VM
-	GetVMStatus(vmID int) (*VMStatus, error)
-
-	// WaitForVMStatus waits for a VM to reach a specific status
-	WaitForVMStatus(vmID int, status string, timeoutSec int) error
+	// GetTaskStatus retrieves the current status of a task
+	GetTaskStatus(taskID string) (*TaskStatus, error)
 }
 
-// VMSize represents the available VM sizes
-type VMSize string
-
-const (
-	VMSizeS1 VMSize = "s1" // 1 core, 1GB RAM
-	VMSizeS2 VMSize = "s2" // 2 cores, 2GB RAM
-	VMSizeS4 VMSize = "s4" // 4 cores, 4GB RAM
-)
-
-// VMSizeConfig maps VM sizes to their resource configurations
-var VMSizeConfig = map[VMSize]struct {
-	Cores  int
-	Memory int
-}{
-	VMSizeS1: {Cores: 1, Memory: 1024},
-	VMSizeS2: {Cores: 2, Memory: 2048},
-	VMSizeS4: {Cores: 4, Memory: 4096},
-}
-
-// VMCloneResponse represents the response from cloning a VM
-type VMCloneResponse struct {
-	TaskID string `json:"taskid"`
-	VMID   int    `json:"vmid"`
-}
-
-// VMInfo represents the information about a VM
-type VMInfo struct {
-	ID     int     `json:"vmid"`
-	Name   string  `json:"name"`
-	Status string  `json:"status"`
-	CPU    float64 `json:"cpu"`
-	Memory int     `json:"maxmem"`
-	Disk   int     `json:"maxdisk"`
-	Node   string  `json:"node"`
-}
-
-// VMStatus represents the current status of a VM
-type VMStatus struct {
-	Status string `json:"status"` // running, stopped, etc.
-	VMID   int    `json:"vmid"`
-	Node   string `json:"node"`
-}
-
-// VMNetworkInterface represents a network interface in a VM
-type VMNetworkInterface struct {
-	Name        string   `json:"name"`
-	IPAddresses []string `json:"ip-addresses"`
-	MACAddress  string   `json:"hardware-address"`
-}
-
-// CloudInitConfig represents a cloud-init configuration for a VM
-type CloudInitConfig struct {
-	Hostname   string   `json:"hostname"`
-	Username   string   `json:"user"`
-	Password   string   `json:"password"`
-	SSHKeys    []string `json:"ssh_authorized_keys"`
-	JoinConfig *struct {
-		JoinURL           string `json:"join_url"`
-		JoinToken         string `json:"join_token"`
-		JoinTokenHash     string `json:"join_token_hash"`
-		KubernetesVersion string `json:"kubernetes_version"`
-	} `json:"join_config,omitempty"`
+// TaskResponse represents a Proxmox API response containing a task ID
+type TaskResponse struct {
+	TaskID    string `json:"taskid"`    // The original UPID string
+	NodeName  string `json:"node"`      // Node name where the task is running
+	PID       string `json:"pid"`       // Process ID in hex
+	PStart    string `json:"pstart"`    // Process start time in hex
+	StartTime string `json:"starttime"` // Start time of the task in hex
+	Type      string `json:"type"`      // Task type
+	ID        string `json:"id"`        // Optional ID field
+	User      string `json:"user"`      // User@Realm who initiated the task
 }
 
 // TaskStatus represents the status of a Proxmox task
 type TaskStatus struct {
-	ExitStatus string `json:"exitstatus"`
-	Status     string `json:"status"`
+	ExitStatus string `json:"exitstatus"` // Such as 'OK' or 'ERROR'
+	Status     string `json:"status"`     // Such as 'stopped' or 'running'
+	Node       string `json:"node"`       // Node name where the task is running
+	PID        int    `json:"pid"`        // Process ID
+	Type       string `json:"type"`       // Task type
+	ID         string `json:"id"`         // Optional ID
+	User       string `json:"user"`       // User@realm who initiated the task
+	StartTime  int64  `json:"starttime"`  // Start time of the task
+	UpID       string `json:"upid"`       // Full UPID of the task
 }

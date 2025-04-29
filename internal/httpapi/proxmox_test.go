@@ -11,15 +11,13 @@ import (
 // generateTestVMID creates a test VM ID that's unlikely to conflict with existing VMs
 func generateTestVMID() int {
 	timestamp := time.Now().Unix()
-	return 9000 + int(timestamp%1000) // VM ID in range 9000-9999
+	return 900_000 + int(timestamp%10) // VM ID in range 9000-9999
 }
 
 // TestCloneVMIntegration tests the integration with a real Proxmox server
 // This test requires a valid .env file with Proxmox credentials
 // It will only run if the INTEGRATION_TEST environment variable is set to true
-func TestCloneVMIntegration(t *testing.T) {
-	skipIfNotIntegrationTest(t)
-
+func TestVMIntegration(t *testing.T) {
 	cfg, err := config.Builder().WithEnv().Build()
 	assert.NoError(t, err)
 
@@ -31,7 +29,7 @@ func TestCloneVMIntegration(t *testing.T) {
 		WithSkipTLSVerify(cfg.SkipTLSVerify),
 	)
 
-	t.Run("", func(t *testing.T) {
+	t.Run("Clone, Start, Stop, Delete VM", func(t *testing.T) {
 		// Generate a test VM ID
 		testVMID := generateTestVMID()
 
@@ -56,12 +54,8 @@ func TestCloneVMIntegration(t *testing.T) {
 		if cloneResponse.TaskID == "" {
 			t.Error("CloneVM returned empty task ID")
 		}
-		if cloneResponse.VMID != testVMID {
-			t.Errorf("CloneVM returned wrong VM ID: expected %d, got %d", testVMID, cloneResponse.VMID)
-		}
 
 		t.Logf("Clone task started with task ID: %s", cloneResponse.TaskID)
-		t.Log("Test completed successfully")
 	})
 
 }
