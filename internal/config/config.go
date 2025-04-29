@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -117,13 +118,13 @@ func (b *ConfigBuilder) LoadFile(filepath *string) *ConfigBuilder {
 }
 
 // WithEnv overrides configuration from environment variables
-func (b *ConfigBuilder) WithEnv() *ConfigBuilder {
+func (b *ConfigBuilder) WithEnv(dirpath string) *ConfigBuilder {
 	if b.err != nil {
 		return b
 	}
 
-	_ = godotenv.Load(".env.local")
-	_ = godotenv.Load("../../.env")
+	_ = godotenv.Load(path.Join(dirpath, ".env.local"))
+	_ = godotenv.Load(path.Join(dirpath, ".env"))
 
 	if err := LoadEnvToStruct(b.config, "FULCRUM_AGENT_", "env"); err != nil {
 		b.err = fmt.Errorf("failed to override configuration from environment: %w", err)

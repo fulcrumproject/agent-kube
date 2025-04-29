@@ -19,7 +19,7 @@ func generateTestVMID() int {
 // This test requires a valid .env file with Proxmox credentials
 // It will only run if the INTEGRATION_TEST environment variable is set to true
 func TestVMIntegration(t *testing.T) {
-	cfg, err := config.Builder().WithEnv().Build()
+	cfg, err := config.Builder().WithEnv("../..").Build()
 	assert.NoError(t, err)
 
 	cli := NewProxmoxClient(

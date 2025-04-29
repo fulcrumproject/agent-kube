@@ -19,7 +19,7 @@ func main() {
 	configPath := flag.String("config", "", "Path to configuration file")
 	flag.Parse()
 
-	cfg, err := config.Builder().LoadFile(configPath).WithEnv().Build()
+	cfg, err := config.Builder().LoadFile(configPath).WithEnv(".").Build()
 	if err != nil {
 		log.Fatalf("Invalid configuration: %v", err)
 	}
