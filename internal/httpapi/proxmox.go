@@ -46,7 +46,7 @@ func (c *HTTPProxmoxClient) CloneVM(templateID int, newVMID int, name string) (*
 
 	endpoint := fmt.Sprintf("/api2/json/nodes/%s/qemu/%d/clone", c.hostName, templateID)
 
-	return c.command(endpoint, form)
+	return c.post(endpoint, form)
 }
 
 // ConfigureVM configures a VM (CPU, memory, cloud-init)
@@ -62,28 +62,34 @@ func (c *HTTPProxmoxClient) ConfigureVM(vmID int, cores int, memory int, cloudIn
 
 	endpoint := fmt.Sprintf("/api2/json/nodes/%s/qemu/%d/config", c.hostName, vmID)
 
-	return c.command(endpoint, form)
+	return c.post(endpoint, form)
 }
 
 // StartVM starts a virtual machine
 func (c *HTTPProxmoxClient) StartVM(vmID int) (*agent.TaskResponse, error) {
 	endpoint := fmt.Sprintf("/api2/json/nodes/%s/qemu/%d/status/start", c.hostName, vmID)
 
-	return c.command(endpoint, url.Values{})
+	return c.post(endpoint, url.Values{})
 }
 
 // StopVM stops a virtual machine
 func (c *HTTPProxmoxClient) StopVM(vmID int) (*agent.TaskResponse, error) {
 	endpoint := fmt.Sprintf("/api2/json/nodes/%s/qemu/%d/status/stop", c.hostName, vmID)
 
-	return c.command(endpoint, url.Values{})
+	return c.post(endpoint, url.Values{})
 }
 
 // DeleteVM deletes a virtual machine
 func (c *HTTPProxmoxClient) DeleteVM(vmID int) (*agent.TaskResponse, error) {
 	endpoint := fmt.Sprintf("/api2/json/nodes/%s/qemu/%d", c.hostName, vmID)
 
-	return c.command(endpoint, url.Values{})
+	resp, err := c.httpClient.Delete(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	return taskResponse(resp)
 }
 
 // GetTaskStatus retrieves the current status of a task
@@ -101,7 +107,7 @@ func (c *HTTPProxmoxClient) GetTaskStatus(taskID string) (*agent.TaskStatus, err
 		nodeName = c.hostName
 	}
 
-	endpoint := fmt.Sprintf("/api2/json/nodes/%s/tasks/%s/status", nodeName, url.PathEscape(taskID))
+	endpoint := fmt.Sprintf("/api2/json/nodes/%s/tasks/%s/status", nodeName, taskID)
 
 	resp, err := c.httpClient.Get(endpoint)
 	if err != nil {
@@ -155,13 +161,17 @@ func (c *HTTPProxmoxClient) WaitForTask(taskID string, timeout time.Duration) (*
 	}
 }
 
-func (c *HTTPProxmoxClient) command(endpoint string, form url.Values) (*agent.TaskResponse, error) {
+func (c *HTTPProxmoxClient) post(endpoint string, form url.Values) (*agent.TaskResponse, error) {
 	resp, err := c.httpClient.PostForm(endpoint, form)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
 	defer resp.Body.Close()
 
+	return taskResponse(resp)
+}
+
+func taskResponse(resp *http.Response) (*agent.TaskResponse, error) {
 	// Check response
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
@@ -185,6 +195,7 @@ func (c *HTTPProxmoxClient) command(endpoint string, form url.Values) (*agent.Ta
 		return nil, fmt.Errorf("failed to parse task ID: %w", err)
 	}
 	return response, nil
+
 }
 
 // parseUPID parses the UPID string and returns a populated TaskResponse or an error if the UPID is invalid
