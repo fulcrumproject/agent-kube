@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"path"
@@ -212,4 +214,54 @@ func (c *Client) Patch(endpoint string, body []byte) (*http.Response, error) {
 	req.Header.Set("Content-Type", "application/json")
 
 	return c.HTTPClient.Do(req)
+}
+
+// NewRequest creates a new HTTP request with the given method, endpoint, and body
+func (c *Client) NewRequest(method string, endpoint string, body io.Reader) (*http.Request, error) {
+	u, err := url.Parse(c.BaseURL)
+	if err != nil {
+		return nil, err
+	}
+	u.Path = path.Join(u.Path, endpoint)
+
+	req, err := http.NewRequest(method, u.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", c.formatAuthHeader())
+
+	return req, nil
+}
+
+// PostMultipart performs an HTTP POST request with multipart form data
+func (c *Client) PostMultipart(endpoint string, contentType string, body io.Reader) (*http.Response, error) {
+	req, err := c.NewRequest(http.MethodPost, endpoint, body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", contentType)
+
+	return c.HTTPClient.Do(req)
+}
+
+// CreateMultipartForm creates a multipart form with file content
+func (c *Client) CreateMultipartForm(values map[string]string) (*bytes.Buffer, string, error) {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	for key, value := range values {
+		err := writer.WriteField(key, value)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+
+	err := writer.Close()
+	if err != nil {
+		return nil, "", err
+	}
+
+	return body, writer.FormDataContentType(), nil
 }

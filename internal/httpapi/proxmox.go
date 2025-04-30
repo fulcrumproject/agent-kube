@@ -16,20 +16,15 @@ import (
 // HTTPProxmoxClient implements the agent.ProxmoxClient interface
 type HTTPProxmoxClient struct {
 	httpClient  *Client
-	hostName    string // Proxmox node name (e.g., "pve")
+	nodeName    string // Proxmox node name (e.g., "pve")
 	storageType string // Default storage type (e.g., "local-lvm")
 }
 
 // NewProxmoxClient creates a new Proxmox API client
-func NewProxmoxClient(baseURL string, token string, hostName string, storageType string, options ...ClientOption) *HTTPProxmoxClient {
-	// Add PVE auth type to the provided options
-	allOptions := append([]ClientOption{
-		WithAuthType(AuthTypePVE), // Use PVE auth type for Proxmox
-	}, options...)
-
+func NewProxmoxClient(nodeName string, storageType string, httpClient *Client) *HTTPProxmoxClient {
 	client := &HTTPProxmoxClient{
-		httpClient:  NewHTTPClient(baseURL, token, allOptions...),
-		hostName:    hostName,
+		httpClient:  httpClient,
+		nodeName:    nodeName,
 		storageType: storageType,
 	}
 
@@ -44,7 +39,7 @@ func (c *HTTPProxmoxClient) CloneVM(templateID int, newVMID int, name string) (*
 	form.Add("storage", c.storageType)
 	form.Add("name", name)
 
-	endpoint := fmt.Sprintf("/api2/json/nodes/%s/qemu/%d/clone", c.hostName, templateID)
+	endpoint := fmt.Sprintf("/api2/json/nodes/%s/qemu/%d/clone", c.nodeName, templateID)
 
 	return c.post(endpoint, form)
 }
@@ -60,30 +55,56 @@ func (c *HTTPProxmoxClient) ConfigureVM(vmID int, cores int, memory int, cloudIn
 		form.Add("cicustom", cloudInitConfig)
 	}
 
-	endpoint := fmt.Sprintf("/api2/json/nodes/%s/qemu/%d/config", c.hostName, vmID)
+	endpoint := fmt.Sprintf("/api2/json/nodes/%s/qemu/%d/config", c.nodeName, vmID)
 
 	return c.post(endpoint, form)
 }
 
 // StartVM starts a virtual machine
 func (c *HTTPProxmoxClient) StartVM(vmID int) (*agent.TaskResponse, error) {
-	endpoint := fmt.Sprintf("/api2/json/nodes/%s/qemu/%d/status/start", c.hostName, vmID)
+	endpoint := fmt.Sprintf("/api2/json/nodes/%s/qemu/%d/status/start", c.nodeName, vmID)
 
 	return c.post(endpoint, url.Values{})
 }
 
 // StopVM stops a virtual machine
 func (c *HTTPProxmoxClient) StopVM(vmID int) (*agent.TaskResponse, error) {
-	endpoint := fmt.Sprintf("/api2/json/nodes/%s/qemu/%d/status/stop", c.hostName, vmID)
+	endpoint := fmt.Sprintf("/api2/json/nodes/%s/qemu/%d/status/stop", c.nodeName, vmID)
 
 	return c.post(endpoint, url.Values{})
 }
 
 // DeleteVM deletes a virtual machine
 func (c *HTTPProxmoxClient) DeleteVM(vmID int) (*agent.TaskResponse, error) {
-	endpoint := fmt.Sprintf("/api2/json/nodes/%s/qemu/%d", c.hostName, vmID)
+	endpoint := fmt.Sprintf("/api2/json/nodes/%s/qemu/%d", c.nodeName, vmID)
 
 	resp, err := c.httpClient.Delete(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	return taskResponse(resp)
+}
+
+// UploadCloudInit uploads a cloud-init configuration file to Proxmox storage
+func (c *HTTPProxmoxClient) UploadCloudInit(nodeName, storageName, fileName string, content string) (*agent.TaskResponse, error) {
+	// Prepare the endpoint for file upload
+	endpoint := fmt.Sprintf("/api2/json/nodes/%s/storage/%s/upload", nodeName, storageName)
+
+	// Create multipart form data
+	values := map[string]string{
+		"content":  content,
+		"filename": fmt.Sprintf("snippets/%s", fileName),
+	}
+
+	body, contentType, err := c.httpClient.CreateMultipartForm(values)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create multipart form: %w", err)
+	}
+
+	// Upload the file
+	resp, err := c.httpClient.PostMultipart(endpoint, contentType, body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
@@ -104,7 +125,7 @@ func (c *HTTPProxmoxClient) GetTaskStatus(taskID string) (*agent.TaskStatus, err
 	nodeName := taskResp.NodeName
 	if nodeName == "" {
 		// If we couldn't parse the node name from the UPID, use the client's default host
-		nodeName = c.hostName
+		nodeName = c.nodeName
 	}
 
 	endpoint := fmt.Sprintf("/api2/json/nodes/%s/tasks/%s/status", nodeName, taskID)

@@ -22,13 +22,11 @@ func TestVMIntegration(t *testing.T) {
 	cfg, err := config.Builder().WithEnv("../..").Build()
 	assert.NoError(t, err)
 
-	cli := NewProxmoxClient(
-		cfg.ProxmoxAPIURL,
-		cfg.ProxmoxAPIToken,
-		cfg.ProxmoxHost,
-		cfg.ProxmoxStorage,
-		WithSkipTLSVerify(cfg.SkipTLSVerify),
-	)
+	httpCli := NewHTTPClient(cfg.ProxmoxAPIURL, cfg.ProxmoxAPIToken, WithAuthType(AuthTypePVE))
+	assert.NotNil(t, httpCli)
+
+	cli := NewProxmoxClient(cfg.ProxmoxHost, cfg.ProxmoxStorage, httpCli)
+	assert.NotNil(t, cli)
 
 	t.Run("Clone, Config, Start, Stop, Delete VM", func(t *testing.T) {
 		// Generate a test VM ID
@@ -56,9 +54,47 @@ func TestVMIntegration(t *testing.T) {
 
 		t.Logf("Clone operation completed successfully")
 
-		// 2. Configure the VM
-		t.Logf("Configuring VM with 2 cores and 2048MB memory")
-		configResp, err := cli.ConfigureVM(testVMID, 2, 2048, "")
+		// 2. Generate and upload cloud-init configuration
+		t.Logf("Generating and uploading cloud-init configuration")
+		cloudInitParams := CloudInitParams{
+			Hostname:       vmName,
+			FQDN:           vmName,
+			Username:       "ubuntu",
+			Password:       "ubuntu",
+			SSHKeys:        []string{"ssh-rsa AAAAB3NzaC1yc2EAAAA... test@example.com"},
+			ExpirePassword: false,
+			PackageUpgrade: true,
+			JoinURL:        "172.30.232.66:6443",
+			JoinToken:      "123456.6357ad0f550c8e04",
+			CACertHash:     "sha256:1992ff0cf2bc550fd67ad3238e1355a47ce6b2f32a009f433139b5985066db54",
+			KubeVersion:    "v1.30.5",
+		}
+
+		// Generate cloud-init file
+		cloudInitFile, err := GenerateCloudInitFile(cfg.ProxmoxHost, "local", vmName, cloudInitParams)
+		assert.NoError(t, err, "GenerateCloudInitFile should not return an error")
+
+		// Upload cloud-init file
+		uploadResp, err := cli.UploadCloudInit(
+			cloudInitFile.NodeName,
+			cloudInitFile.StorageName,
+			cloudInitFile.FileName,
+			cloudInitFile.Content,
+		)
+		assert.NoError(t, err, "UploadCloudInit should not return an error")
+		assert.NotNil(t, uploadResp, "UploadCloudInit should return a response")
+		assert.NotEmpty(t, uploadResp.TaskID, "UploadCloudInit should return a task ID")
+
+		// Wait for upload operation to complete
+		uploadStatus, err := cli.WaitForTask(uploadResp.TaskID, 1*time.Minute)
+		assert.NoError(t, err, "WaitForTask for upload should not return an error")
+		assert.Equal(t, "OK", uploadStatus.ExitStatus, "Upload task should complete with OK status")
+
+		t.Logf("Cloud-init configuration uploaded successfully")
+
+		// 3. Configure the VM with cloud-init
+		t.Logf("Configuring VM with 2 cores, 2048MB memory, and cloud-init")
+		configResp, err := cli.ConfigureVM(testVMID, 2, 2048, cloudInitFile.Path)
 		assert.NoError(t, err, "ConfigureVM should not return an error")
 		assert.NotNil(t, configResp, "ConfigureVM should return a response")
 		assert.NotEmpty(t, configResp.TaskID, "ConfigureVM should return a task ID")
@@ -70,7 +106,7 @@ func TestVMIntegration(t *testing.T) {
 
 		t.Logf("Configure operation completed successfully")
 
-		// 3. Start the VM
+		// 4. Start the VM
 		t.Logf("Starting VM %d", testVMID)
 		startResp, err := cli.StartVM(testVMID)
 		assert.NoError(t, err, "StartVM should not return an error")
@@ -84,7 +120,7 @@ func TestVMIntegration(t *testing.T) {
 
 		t.Logf("VM started successfully")
 
-		// 4. Stop the VM
+		// 5. Stop the VM
 		t.Logf("Stopping VM %d", testVMID)
 		stopResp, err := cli.StopVM(testVMID)
 		assert.NoError(t, err, "StopVM should not return an error")
@@ -98,7 +134,7 @@ func TestVMIntegration(t *testing.T) {
 
 		t.Logf("VM stopped successfully")
 
-		// 5. Delete the VM
+		// 6. Delete the VM
 		t.Logf("Deleting VM %d", testVMID)
 		deleteResp, err := cli.DeleteVM(testVMID)
 		assert.NoError(t, err, "DeleteVM should not return an error")
@@ -111,6 +147,65 @@ func TestVMIntegration(t *testing.T) {
 		assert.Equal(t, "OK", deleteStatus.ExitStatus, "Delete task should complete with OK status")
 
 		t.Logf("VM deleted successfully")
+	})
+
+	t.Run("CloudInit", func(t *testing.T) {
+		testVMID := 900001
+
+		// Define test VM name
+		vmName := fmt.Sprintf("integration-test-vm-%d", testVMID)
+
+		// 2. Generate and upload cloud-init configuration
+		t.Logf("Generating and uploading cloud-init configuration")
+		cloudInitParams := CloudInitParams{
+			Hostname:       vmName,
+			FQDN:           vmName,
+			Username:       "ubuntu",
+			Password:       "ubuntu",
+			SSHKeys:        []string{"ssh-rsa AAAAB3NzaC1yc2EAAAA... test@example.com"},
+			ExpirePassword: false,
+			PackageUpgrade: true,
+			JoinURL:        "172.30.232.66:6443",
+			JoinToken:      "123456.6357ad0f550c8e04",
+			CACertHash:     "sha256:1992ff0cf2bc550fd67ad3238e1355a47ce6b2f32a009f433139b5985066db54",
+			KubeVersion:    "v1.30.5",
+		}
+
+		// Generate cloud-init file
+		cloudInitFile, err := GenerateCloudInitFile(cfg.ProxmoxHost, "local", vmName, cloudInitParams)
+		assert.NoError(t, err, "GenerateCloudInitFile should not return an error")
+
+		// Upload cloud-init file
+		uploadResp, err := cli.UploadCloudInit(
+			cloudInitFile.NodeName,
+			cloudInitFile.StorageName,
+			cloudInitFile.FileName,
+			cloudInitFile.Content,
+		)
+		assert.NoError(t, err, "UploadCloudInit should not return an error")
+		assert.NotNil(t, uploadResp, "UploadCloudInit should return a response")
+		assert.NotEmpty(t, uploadResp.TaskID, "UploadCloudInit should return a task ID")
+
+		// Wait for upload operation to complete
+		uploadStatus, err := cli.WaitForTask(uploadResp.TaskID, 1*time.Minute)
+		assert.NoError(t, err, "WaitForTask for upload should not return an error")
+		assert.Equal(t, "OK", uploadStatus.ExitStatus, "Upload task should complete with OK status")
+
+		t.Logf("Cloud-init configuration uploaded successfully")
+
+		// 3. Configure the VM with cloud-init
+		t.Logf("Configuring VM with 2 cores, 2048MB memory, and cloud-init")
+		configResp, err := cli.ConfigureVM(testVMID, 2, 2048, cloudInitFile.Path)
+		assert.NoError(t, err, "ConfigureVM should not return an error")
+		assert.NotNil(t, configResp, "ConfigureVM should return a response")
+		assert.NotEmpty(t, configResp.TaskID, "ConfigureVM should return a task ID")
+
+		// Wait for configure operation to complete
+		configStatus, err := cli.WaitForTask(configResp.TaskID, 1*time.Minute)
+		assert.NoError(t, err, "WaitForTask for config should not return an error")
+		assert.Equal(t, "OK", configStatus.ExitStatus, "Config task should complete with OK status")
+
+		t.Logf("Configure operation completed successfully")
 	})
 
 	t.Run("Clone Non-Existent Template", func(t *testing.T) {

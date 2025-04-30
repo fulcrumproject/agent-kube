@@ -25,6 +25,15 @@ type CloudInitParams struct {
 	KubeVersion    string
 }
 
+// CloudInitFile represents a cloud-init file to be uploaded to Proxmox
+type CloudInitFile struct {
+	NodeName    string
+	StorageName string
+	FileName    string
+	Content     string
+	Path        string // The formatted path for cicustom parameter
+}
+
 // RenderCloudInit generates a cloud-init configuration from the embedded template
 // using the provided parameters
 func RenderCloudInit(params CloudInitParams) (string, error) {
@@ -43,8 +52,25 @@ func RenderCloudInit(params CloudInitParams) (string, error) {
 	return buf.String(), nil
 }
 
-// FormatCicustom formats the cicustom parameter for Proxmox API calls
-// Example: user=local:snippets/kube-agent-user-ci-worker.yml
-func FormatCicustom(storageName string, path string) string {
-	return fmt.Sprintf("user=%s:%s", storageName, path)
+// GenerateCloudInitFile creates a CloudInitFile with the given parameters
+func GenerateCloudInitFile(nodeName string, storageName string, vmName string, params CloudInitParams) (*CloudInitFile, error) {
+	// Generate cloud-init content
+	content, err := RenderCloudInit(params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to render cloud-init: %w", err)
+	}
+
+	// Generate filename based on VM name
+	fileName := fmt.Sprintf("kube-agent-user-ci-%s.yml", vmName)
+
+	// Generate the formatted path for cicustom parameter
+	cloudInitPath := fmt.Sprintf("%s:user=snippets/%s", storageName, fileName)
+
+	return &CloudInitFile{
+		NodeName:    nodeName,
+		StorageName: storageName,
+		FileName:    fileName,
+		Content:     content,
+		Path:        cloudInitPath,
+	}, nil
 }
