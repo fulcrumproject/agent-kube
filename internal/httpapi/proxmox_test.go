@@ -7,7 +7,7 @@ import (
 
 	"fulcrumproject.org/kube-agent/internal/cloudinit"
 	"fulcrumproject.org/kube-agent/internal/config"
-	"fulcrumproject.org/kube-agent/internal/scp"
+	"fulcrumproject.org/kube-agent/internal/ssh"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -31,6 +31,13 @@ func TestVMIntegration(t *testing.T) {
 
 	cli := NewProxmoxClient(cfg.ProxmoxHost, cfg.ProxmoxStorage, httpCli)
 	assert.NotNil(t, cli)
+
+	scpOpts := ssh.Options{
+		Host:           cfg.ProxmoxCIHost,
+		Username:       cfg.ProxmoxCIUser,
+		PrivateKeyPath: cfg.ProxmoxCIPKPath,
+		Timeout:        30 * time.Second,
+	}
 
 	t.Run("Clone, Config, Start, Stop, Delete VM", func(t *testing.T) {
 		// Generate a test VM ID
@@ -80,25 +87,18 @@ func TestVMIntegration(t *testing.T) {
 
 		// Upload cloud-init file via SCP
 		cloudInitFileName := fmt.Sprintf("kube-agent-ci-%s.yml", vmName)
-		cloudInitPath := fmt.Sprintf("user=local:snippets/%s", cloudInitFileName)
-
-		// Create SCP client options
-		scpOpts := scp.Options{
-			Host:           cfg.ProxmoxCIHost,
-			Username:       cfg.ProxmoxCIUser,
-			PrivateKeyPath: cfg.ProxmoxCIPKPath,
-			Timeout:        30 * time.Second,
-		}
+		cloudInitFilePath := fmt.Sprintf("%s/%s", cfg.ProxmoxCIPath, cloudInitFileName)
 
 		// Upload the cloud-init file to the Proxmox server
-		err = scp.CopyFile(scpOpts, []byte(cloudInitContent), fmt.Sprintf("%s/%s", cfg.ProxmoxCIPath, cloudInitFileName))
+		err = ssh.CopyFile(scpOpts, []byte(cloudInitContent), cloudInitFilePath)
 		assert.NoError(t, err, "Uploading cloud-init file via SCP should not return an error")
 
 		t.Logf("Cloud-init configuration uploaded successfully")
 
 		// 3. Configure the VM with cloud-init
 		t.Logf("Configuring VM with 2 cores, 2048MB memory, and cloud-init")
-		configResp, err := cli.ConfigureVM(testVMID, 2, 2048, cloudInitPath)
+		cloudInitConfig := fmt.Sprintf("user=local:snippets/%s", cloudInitFileName)
+		configResp, err := cli.ConfigureVM(testVMID, 2, 2048, cloudInitConfig)
 		assert.NoError(t, err, "ConfigureVM should not return an error")
 		assert.NotNil(t, configResp, "ConfigureVM should return a response")
 		assert.NotEmpty(t, configResp.TaskID, "ConfigureVM should return a task ID")
@@ -151,6 +151,13 @@ func TestVMIntegration(t *testing.T) {
 		assert.Equal(t, "OK", deleteStatus.ExitStatus, "Delete task should complete with OK status")
 
 		t.Logf("VM deleted successfully")
+
+		// Cleanup CI file
+		err = ssh.DeleteFile(scpOpts, cloudInitFilePath)
+		if err != nil {
+			t.Fatalf("DeleteFile failed: %v", err)
+		}
+		t.Log("Successfully deleted ci file")
 	})
 
 	t.Run("Clone Non-Existent Template", func(t *testing.T) {

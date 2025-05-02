@@ -1,4 +1,4 @@
-package scp
+package ssh
 
 import (
 	"bytes"
@@ -189,5 +189,39 @@ func (c *Client) Close() error {
 	if c.client != nil {
 		return c.client.Close()
 	}
+	return nil
+}
+
+// DeleteFile deletes a file on the remote server
+func DeleteFile(opts Options, remotePath string) error {
+	// Create a new SCP client
+	scpClient, err := NewClient(opts)
+	if err != nil {
+		return err
+	}
+	defer scpClient.Close()
+
+	// Use the client to delete the file
+	return scpClient.DeleteFile(remotePath)
+}
+
+// DeleteFile deletes a file on the remote server
+func (c *Client) DeleteFile(remotePath string) error {
+	// Create a new SSH session
+	session, err := c.client.NewSession()
+	if err != nil {
+		return fmt.Errorf("failed to create SSH session: %w", err)
+	}
+	defer session.Close()
+
+	// Execute the rm command to delete the file
+	var stderrBuf bytes.Buffer
+	session.Stderr = &stderrBuf
+
+	cmd := fmt.Sprintf("rm -f %s", remotePath)
+	if err := session.Run(cmd); err != nil {
+		return fmt.Errorf("failed to delete file: %w: %s", err, stderrBuf.String())
+	}
+
 	return nil
 }

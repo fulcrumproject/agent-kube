@@ -1,4 +1,4 @@
-package scp
+package ssh
 
 import (
 	"path/filepath"
@@ -46,6 +46,10 @@ func TestCopyFile(t *testing.T) {
 
 	t.Logf("Successfully copied content to %s", remotePath)
 
-	// Cleanup: We could add code to delete the file after the test, but that would require
-	// implementing additional SSH commands, which is beyond the scope of testing CopyFile
+	// Cleanup and test delete
+	err = DeleteFile(opts, remotePath)
+	if err != nil {
+		t.Fatalf("DeleteFile failed: %v", err)
+	}
+	t.Logf("Successfully deleted file at %s", remotePath)
 }
