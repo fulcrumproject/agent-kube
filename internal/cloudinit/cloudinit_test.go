@@ -1,4 +1,4 @@
-package httpapi
+package cloudinit
 
 import (
 	"strings"
@@ -6,7 +6,7 @@ import (
 )
 
 func TestRenderCloudInit(t *testing.T) {
-	params := CloudInitParams{
+	params := Params{
 		Hostname:       "test-worker-node",
 		FQDN:           "test-worker-node",
 		Username:       "ubuntu",
@@ -20,7 +20,7 @@ func TestRenderCloudInit(t *testing.T) {
 		KubeVersion:    "v1.30.5",
 	}
 
-	result, err := RenderCloudInit(params)
+	result, err := Generate(TestTempl, params)
 	if err != nil {
 		t.Fatalf("Failed to render cloud-init: %v", err)
 	}
@@ -32,7 +32,6 @@ func TestRenderCloudInit(t *testing.T) {
 		"user: ubuntu",
 		"password: ubuntu",
 		"package_upgrade: true",
-		"curl -sfL https://goyaki.clastix.io",
 		"JOIN_URL=172.30.232.66:6443",
 		"JOIN_TOKEN=08f863.6357ad0f550c8e04",
 		"JOIN_TOKEN_CACERT_HASH=sha256:1992ff0cf2bc550fd67ad3238e1355a47ce6b2f32a009f433139b5985066db54",

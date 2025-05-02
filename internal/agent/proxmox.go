@@ -28,7 +28,7 @@ type ProxmoxClient interface {
 	GetTaskStatus(taskID string) (*TaskStatus, error)
 
 	// UploadCloudInit uploads a cloud-init configuration file to Proxmox storage
-	UploadCloudInit(nodeName, storageName, fileName string, content string) (*TaskResponse, error)
+	UploadCloudInit(fileName string, content string) (*TaskResponse, error)
 }
 
 // TaskResponse represents a Proxmox API response containing a task ID

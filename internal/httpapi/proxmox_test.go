@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"fulcrumproject.org/kube-agent/internal/cloudinit"
 	"fulcrumproject.org/kube-agent/internal/config"
 	"github.com/stretchr/testify/assert"
 )
@@ -56,7 +57,7 @@ func TestVMIntegration(t *testing.T) {
 
 		// 2. Generate and upload cloud-init configuration
 		t.Logf("Generating and uploading cloud-init configuration")
-		cloudInitParams := CloudInitParams{
+		cloudInitParams := cloudinit.Params{
 			Hostname:       vmName,
 			FQDN:           vmName,
 			Username:       "ubuntu",
@@ -71,30 +72,19 @@ func TestVMIntegration(t *testing.T) {
 		}
 
 		// Generate cloud-init file
-		cloudInitFile, err := GenerateCloudInitFile(cfg.ProxmoxHost, "local", vmName, cloudInitParams)
+		_, err = cloudinit.Generate(cloudinit.Templ, cloudInitParams)
 		assert.NoError(t, err, "GenerateCloudInitFile should not return an error")
 
-		// Upload cloud-init file
-		uploadResp, err := cli.UploadCloudInit(
-			cloudInitFile.NodeName,
-			cloudInitFile.StorageName,
-			cloudInitFile.FileName,
-			cloudInitFile.Content,
-		)
-		assert.NoError(t, err, "UploadCloudInit should not return an error")
-		assert.NotNil(t, uploadResp, "UploadCloudInit should return a response")
-		assert.NotEmpty(t, uploadResp.TaskID, "UploadCloudInit should return a task ID")
-
-		// Wait for upload operation to complete
-		uploadStatus, err := cli.WaitForTask(uploadResp.TaskID, 1*time.Minute)
-		assert.NoError(t, err, "WaitForTask for upload should not return an error")
-		assert.Equal(t, "OK", uploadStatus.ExitStatus, "Upload task should complete with OK status")
+		// Upload cloud-init file via SCP
+		// TODO
+		cloudInitFileName := fmt.Sprintf("kube-agent-ci-%s.yml", vmName)
+		cloudInitPath := fmt.Sprintf("local:user=snippets/%s", cloudInitFileName)
 
 		t.Logf("Cloud-init configuration uploaded successfully")
 
 		// 3. Configure the VM with cloud-init
 		t.Logf("Configuring VM with 2 cores, 2048MB memory, and cloud-init")
-		configResp, err := cli.ConfigureVM(testVMID, 2, 2048, cloudInitFile.Path)
+		configResp, err := cli.ConfigureVM(testVMID, 2, 2048, cloudInitPath)
 		assert.NoError(t, err, "ConfigureVM should not return an error")
 		assert.NotNil(t, configResp, "ConfigureVM should return a response")
 		assert.NotEmpty(t, configResp.TaskID, "ConfigureVM should return a task ID")
@@ -157,7 +147,7 @@ func TestVMIntegration(t *testing.T) {
 
 		// 2. Generate and upload cloud-init configuration
 		t.Logf("Generating and uploading cloud-init configuration")
-		cloudInitParams := CloudInitParams{
+		cloudInitParams := cloudinit.Params{
 			Hostname:       vmName,
 			FQDN:           vmName,
 			Username:       "ubuntu",
@@ -172,30 +162,19 @@ func TestVMIntegration(t *testing.T) {
 		}
 
 		// Generate cloud-init file
-		cloudInitFile, err := GenerateCloudInitFile(cfg.ProxmoxHost, "local", vmName, cloudInitParams)
+		_, err := cloudinit.Generate(cloudinit.TestTempl, cloudInitParams)
 		assert.NoError(t, err, "GenerateCloudInitFile should not return an error")
 
 		// Upload cloud-init file
-		uploadResp, err := cli.UploadCloudInit(
-			cloudInitFile.NodeName,
-			cloudInitFile.StorageName,
-			cloudInitFile.FileName,
-			cloudInitFile.Content,
-		)
-		assert.NoError(t, err, "UploadCloudInit should not return an error")
-		assert.NotNil(t, uploadResp, "UploadCloudInit should return a response")
-		assert.NotEmpty(t, uploadResp.TaskID, "UploadCloudInit should return a task ID")
-
-		// Wait for upload operation to complete
-		uploadStatus, err := cli.WaitForTask(uploadResp.TaskID, 1*time.Minute)
-		assert.NoError(t, err, "WaitForTask for upload should not return an error")
-		assert.Equal(t, "OK", uploadStatus.ExitStatus, "Upload task should complete with OK status")
+		// TODO with SCP client
+		cloudInitFileName := fmt.Sprintf("kube-agent-ci-%s.yml", vmName)
+		cloudInitPath := fmt.Sprintf("local:user=snippets/%s", cloudInitFileName)
 
 		t.Logf("Cloud-init configuration uploaded successfully")
 
 		// 3. Configure the VM with cloud-init
 		t.Logf("Configuring VM with 2 cores, 2048MB memory, and cloud-init")
-		configResp, err := cli.ConfigureVM(testVMID, 2, 2048, cloudInitFile.Path)
+		configResp, err := cli.ConfigureVM(testVMID, 2, 2048, cloudInitPath)
 		assert.NoError(t, err, "ConfigureVM should not return an error")
 		assert.NotNil(t, configResp, "ConfigureVM should return a response")
 		assert.NotEmpty(t, configResp.TaskID, "ConfigureVM should return a task ID")

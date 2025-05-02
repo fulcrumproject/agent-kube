@@ -29,6 +29,13 @@ type Config struct {
 	ProxmoxHost     string `json:"proxmoxHost" env:"PROXMOX_HOST"`
 	ProxmoxStorage  string `json:"proxmoxStorage" env:"PROXMOX_STORAGE"`
 
+	// Proxmox Cloud-Init SCP configuration
+	ProxmoxCIHost   string `json:"proxmoxCiHost" env:"PROXMOX_CI_HOST"`
+	ProxmoxCIPort   int    `json:"proxmoxCiPort" env:"PROXMOX_CI_PORT"`
+	ProxmoxCIUser   string `json:"proxmoxCiUser" env:"PROXMOX_CI_USER"`
+	ProxmoxCIPKPath string `json:"proxmoxCiPk" env:"PROXMOX_CI_PK_PATH"`
+	ProxmoxCIPath   string `json:"proxmoxCiPath" env:"PROXMOX_CI_PATH"`
+
 	// Kubernetes
 	KubeAPIURL   string `json:"kubeApiUrl" env:"KUBE_API_URL"`
 	KubeAPIToken string `json:"kubeApiToken" env:"KUBE_API_SECRET"`
