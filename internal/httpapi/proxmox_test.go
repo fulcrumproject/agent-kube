@@ -7,6 +7,7 @@ import (
 
 	"fulcrumproject.org/kube-agent/internal/cloudinit"
 	"fulcrumproject.org/kube-agent/internal/config"
+	"fulcrumproject.org/kube-agent/internal/scp"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -23,7 +24,9 @@ func TestVMIntegration(t *testing.T) {
 	cfg, err := config.Builder().WithEnv("../..").Build()
 	assert.NoError(t, err)
 
-	httpCli := NewHTTPClient(cfg.ProxmoxAPIURL, cfg.ProxmoxAPIToken, WithAuthType(AuthTypePVE))
+	httpCli := NewHTTPClient(cfg.ProxmoxAPIURL, cfg.ProxmoxAPIToken,
+		WithAuthType(AuthTypePVE),
+		WithSkipTLSVerify(true)) // Skip TLS verification for test environment
 	assert.NotNil(t, httpCli)
 
 	cli := NewProxmoxClient(cfg.ProxmoxHost, cfg.ProxmoxStorage, httpCli)
@@ -72,13 +75,24 @@ func TestVMIntegration(t *testing.T) {
 		}
 
 		// Generate cloud-init file
-		_, err = cloudinit.Generate(cloudinit.Templ, cloudInitParams)
+		cloudInitContent, err := cloudinit.Generate(cloudinit.TestTempl, cloudInitParams)
 		assert.NoError(t, err, "GenerateCloudInitFile should not return an error")
 
 		// Upload cloud-init file via SCP
-		// TODO
 		cloudInitFileName := fmt.Sprintf("kube-agent-ci-%s.yml", vmName)
-		cloudInitPath := fmt.Sprintf("local:user=snippets/%s", cloudInitFileName)
+		cloudInitPath := fmt.Sprintf("user=local:snippets/%s", cloudInitFileName)
+
+		// Create SCP client options
+		scpOpts := scp.Options{
+			Host:           cfg.ProxmoxCIHost,
+			Username:       cfg.ProxmoxCIUser,
+			PrivateKeyPath: cfg.ProxmoxCIPKPath,
+			Timeout:        30 * time.Second,
+		}
+
+		// Upload the cloud-init file to the Proxmox server
+		err = scp.CopyFile(scpOpts, []byte(cloudInitContent), fmt.Sprintf("%s/%s", cfg.ProxmoxCIPath, cloudInitFileName))
+		assert.NoError(t, err, "Uploading cloud-init file via SCP should not return an error")
 
 		t.Logf("Cloud-init configuration uploaded successfully")
 
@@ -137,54 +151,6 @@ func TestVMIntegration(t *testing.T) {
 		assert.Equal(t, "OK", deleteStatus.ExitStatus, "Delete task should complete with OK status")
 
 		t.Logf("VM deleted successfully")
-	})
-
-	t.Run("CloudInit", func(t *testing.T) {
-		testVMID := 900001
-
-		// Define test VM name
-		vmName := fmt.Sprintf("integration-test-vm-%d", testVMID)
-
-		// 2. Generate and upload cloud-init configuration
-		t.Logf("Generating and uploading cloud-init configuration")
-		cloudInitParams := cloudinit.Params{
-			Hostname:       vmName,
-			FQDN:           vmName,
-			Username:       "ubuntu",
-			Password:       "ubuntu",
-			SSHKeys:        []string{"ssh-rsa AAAAB3NzaC1yc2EAAAA... test@example.com"},
-			ExpirePassword: false,
-			PackageUpgrade: true,
-			JoinURL:        "172.30.232.66:6443",
-			JoinToken:      "123456.6357ad0f550c8e04",
-			CACertHash:     "sha256:1992ff0cf2bc550fd67ad3238e1355a47ce6b2f32a009f433139b5985066db54",
-			KubeVersion:    "v1.30.5",
-		}
-
-		// Generate cloud-init file
-		_, err := cloudinit.Generate(cloudinit.TestTempl, cloudInitParams)
-		assert.NoError(t, err, "GenerateCloudInitFile should not return an error")
-
-		// Upload cloud-init file
-		// TODO with SCP client
-		cloudInitFileName := fmt.Sprintf("kube-agent-ci-%s.yml", vmName)
-		cloudInitPath := fmt.Sprintf("local:user=snippets/%s", cloudInitFileName)
-
-		t.Logf("Cloud-init configuration uploaded successfully")
-
-		// 3. Configure the VM with cloud-init
-		t.Logf("Configuring VM with 2 cores, 2048MB memory, and cloud-init")
-		configResp, err := cli.ConfigureVM(testVMID, 2, 2048, cloudInitPath)
-		assert.NoError(t, err, "ConfigureVM should not return an error")
-		assert.NotNil(t, configResp, "ConfigureVM should return a response")
-		assert.NotEmpty(t, configResp.TaskID, "ConfigureVM should return a task ID")
-
-		// Wait for configure operation to complete
-		configStatus, err := cli.WaitForTask(configResp.TaskID, 1*time.Minute)
-		assert.NoError(t, err, "WaitForTask for config should not return an error")
-		assert.Equal(t, "OK", configStatus.ExitStatus, "Config task should complete with OK status")
-
-		t.Logf("Configure operation completed successfully")
 	})
 
 	t.Run("Clone Non-Existent Template", func(t *testing.T) {
