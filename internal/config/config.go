@@ -31,7 +31,6 @@ type Config struct {
 
 	// Proxmox Cloud-Init SCP configuration
 	ProxmoxCIHost   string `json:"proxmoxCiHost" env:"PROXMOX_CI_HOST"`
-	ProxmoxCIPort   int    `json:"proxmoxCiPort" env:"PROXMOX_CI_PORT"`
 	ProxmoxCIUser   string `json:"proxmoxCiUser" env:"PROXMOX_CI_USER"`
 	ProxmoxCIPKPath string `json:"proxmoxCiPk" env:"PROXMOX_CI_PK_PATH"`
 	ProxmoxCIPath   string `json:"proxmoxCiPath" env:"PROXMOX_CI_PATH"`

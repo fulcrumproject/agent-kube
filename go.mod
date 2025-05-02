@@ -5,7 +5,7 @@ go 1.24.1
 require github.com/stretchr/testify v1.10.0
 
 require (
-	golang.org/x/crypto v0.37.0 // indirect
+	golang.org/x/crypto v0.37.0
 	golang.org/x/sys v0.32.0 // indirect
 )
 

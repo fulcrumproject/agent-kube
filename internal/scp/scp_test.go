@@ -1,4 +1,4 @@
-package ssh
+package scp
 
 import (
 	"path/filepath"
@@ -24,9 +24,8 @@ func TestCopyFile(t *testing.T) {
 		t.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	opts := SCPOptions{
+	opts := Options{
 		Host:           cfg.ProxmoxCIHost,
-		Port:           cfg.ProxmoxCIPort,
 		Username:       cfg.ProxmoxCIUser,
 		PrivateKeyPath: cfg.ProxmoxCIPKPath, // Now interpreted as a path to the private key file
 		Timeout:        30 * time.Second,

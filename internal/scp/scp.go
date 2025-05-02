@@ -1,4 +1,4 @@
-package ssh
+package scp
 
 import (
 	"bytes"
@@ -10,22 +10,21 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// SCPClient represents an SSH client that can perform SCP operations
-type SCPClient struct {
+// Client represents an SSH client that can perform SCP operations
+type Client struct {
 	client *ssh.Client
 }
 
-// SCPOptions holds the configuration options for creating an SCP client
-type SCPOptions struct {
+// Options holds the configuration options for creating an SCP client
+type Options struct {
 	Host           string
-	Port           int
 	Username       string
 	PrivateKeyPath string // Path to the private key file
 	Timeout        time.Duration
 }
 
-// NewSCPClient creates a new SCP client with the given options
-func NewSCPClient(opts SCPOptions) (*SCPClient, error) {
+// NewClient creates a new SCP client with the given options
+func NewClient(opts Options) (*Client, error) {
 	var authMethods []ssh.AuthMethod
 
 	// Add private key authentication
@@ -45,12 +44,6 @@ func NewSCPClient(opts SCPOptions) (*SCPClient, error) {
 	}
 	authMethods = append(authMethods, ssh.PublicKeys(signer))
 
-	// Set default port and timeout if not specified
-	port := opts.Port
-	if port == 0 {
-		port = 22
-	}
-
 	timeout := opts.Timeout
 	if timeout == 0 {
 		timeout = 30 * time.Second
@@ -65,19 +58,18 @@ func NewSCPClient(opts SCPOptions) (*SCPClient, error) {
 	}
 
 	// Connect to SSH server
-	addr := fmt.Sprintf("%s:%d", opts.Host, port)
-	client, err := ssh.Dial("tcp", addr, config)
+	client, err := ssh.Dial("tcp", opts.Host, config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial SSH server: %w", err)
 	}
 
-	return &SCPClient{client: client}, nil
+	return &Client{client: client}, nil
 }
 
 // CopyFile copies the given content to a remote file via SCP
-func CopyFile(opts SCPOptions, content []byte, remotePath string) error {
+func CopyFile(opts Options, content []byte, remotePath string) error {
 	// Create a new SCP client
-	scpClient, err := NewSCPClient(opts)
+	scpClient, err := NewClient(opts)
 	if err != nil {
 		return err
 	}
@@ -89,12 +81,12 @@ func CopyFile(opts SCPOptions, content []byte, remotePath string) error {
 
 // Copy implements the agent.SCP interface
 // It copies the given content to the remote file specified by filepath
-func (c *SCPClient) Copy(content, remotePath string) error {
+func (c *Client) Copy(content, remotePath string) error {
 	return c.CopyBytes([]byte(content), remotePath)
 }
 
 // CopyBytes copies the given byte content to the remote file specified by filepath
-func (c *SCPClient) CopyBytes(contentBytes []byte, remotePath string) error {
+func (c *Client) CopyBytes(contentBytes []byte, remotePath string) error {
 	// Create a new SSH session
 	session, err := c.client.NewSession()
 	if err != nil {
@@ -193,18 +185,9 @@ func (c *SCPClient) CopyBytes(contentBytes []byte, remotePath string) error {
 }
 
 // Close closes the underlying SSH client connection
-func (c *SCPClient) Close() error {
+func (c *Client) Close() error {
 	if c.client != nil {
 		return c.client.Close()
 	}
 	return nil
-}
-
-// Helper function to parse private key
-func parsePrivateKey(keyPath string) (ssh.Signer, error) {
-	keyData, err := os.ReadFile(keyPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read private key file: %w", err)
-	}
-	return ssh.ParsePrivateKey(keyData)
 }
