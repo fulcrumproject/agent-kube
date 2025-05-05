@@ -27,8 +27,7 @@ func TestKamajiIntegration(t *testing.T) {
 		httpcli.WithSkipTLSVerify(true)) // Skip TLS verification for test environment
 	assert.NotNil(t, httpCli)
 
-	cli := NewKamajiClient(cfg.KubeAPIURL, cfg.KubeAPIToken,
-		httpcli.WithSkipTLSVerify(true))
+	cli := NewKamajiClient(httpCli)
 	assert.NotNil(t, cli)
 
 	t.Run("Create, Wait, Test Connection, Create Join Token, Delete Tenant Control Plane", func(t *testing.T) {

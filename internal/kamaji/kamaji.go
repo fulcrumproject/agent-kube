@@ -20,18 +20,14 @@ import (
 // HTTPKamajiClient implements the agent.KamajiClient interface
 type HTTPKamajiClient struct {
 	httpClient        *httpcli.Client
-	kubeURL           string
-	adminToken        string
 	tenantCertCache   map[string]*agent.TenantCerts
 	tenantHttpClients map[string]*http.Client
 }
 
 // NewKamajiClient creates a new Kamaji API client
-func NewKamajiClient(kubeURL string, adminToken string, options ...httpcli.ClientOption) *HTTPKamajiClient {
+func NewKamajiClient(httpClient *httpcli.Client) *HTTPKamajiClient {
 	return &HTTPKamajiClient{
-		httpClient:        httpcli.NewHTTPClient(kubeURL, adminToken, options...),
-		kubeURL:           kubeURL,
-		adminToken:        adminToken,
+		httpClient:        httpClient,
 		tenantCertCache:   make(map[string]*agent.TenantCerts),
 		tenantHttpClients: make(map[string]*http.Client),
 	}
