@@ -99,7 +99,8 @@ func (c *Client) CreateTenantControlPlane(name string, version string, replicas 
 			"metadata": map[string]interface{}{
 				"name": name,
 				"labels": map[string]interface{}{
-					"created-by": "fulcrum-kube-agent",
+					"created-by":        "fulcrum-kube-agent",
+					"tenant.clastix.io": name,
 				},
 			},
 			"spec": map[string]interface{}{
@@ -108,7 +109,7 @@ func (c *Client) CreateTenantControlPlane(name string, version string, replicas 
 						"replicas": replicas,
 					},
 					"service": map[string]interface{}{
-						"serviceType": "ClusterIP",
+						"serviceType": "LoadBalancer",
 					},
 				},
 				"kubernetes": map[string]interface{}{

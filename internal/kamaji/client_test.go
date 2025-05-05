@@ -80,6 +80,29 @@ func TestKamajiClientIntegration(t *testing.T) {
 		assert.NotEmpty(t, kubeconfigResponse.SecretName, "Secret name should not be empty")
 		t.Logf("Tenant kubeconfig retrieved successfully")
 
+		// Get the tenant client
+		t.Logf("Getting tenant client for: %s", testTenantName)
+		tenantClient, err := client.GetTenantClient(testTenantName)
+
+		// Assertions
+		assert.NoError(t, err, "GetTenantClient should not return an error")
+		assert.NotNil(t, tenantClient, "Tenant client should not be nil")
+		t.Logf("Tenant client retrieved successfully")
+
+		// Create a join token
+		t.Logf("Creating join token for tenant: %s", testTenantName)
+		tokenResponse, err := tenantClient.CreateJoinToken(testTenantName, 24) // 24 hours validity
+
+		// Assertions
+		assert.NoError(t, err, "CreateJoinToken should not return an error")
+		assert.NotNil(t, tokenResponse, "Token response should not be nil")
+		assert.NotEmpty(t, tokenResponse.FullToken, "Full token should not be empty")
+		assert.NotEmpty(t, tokenResponse.TokenID, "Token ID should not be empty")
+		assert.NotEmpty(t, tokenResponse.TokenSecret, "Token secret should not be empty")
+		assert.NotEmpty(t, tokenResponse.CAHash, "CA hash should not be empty")
+		assert.NotEmpty(t, tokenResponse.Endpoint, "Endpoint should not be empty")
+		t.Logf("Join token created successfully")
+
 		// Delete the tenant control plane
 		t.Logf("Deleting tenant control plane: %s", testTenantName)
 		err = client.DeleteTenantControlPlane(testTenantName)
