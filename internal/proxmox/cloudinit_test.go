@@ -1,4 +1,4 @@
-package cloudinit
+package proxmox
 
 import (
 	"strings"
@@ -6,7 +6,7 @@ import (
 )
 
 func TestRenderCloudInit(t *testing.T) {
-	params := Params{
+	params := CloudInitParams{
 		Hostname:       "test-worker-node",
 		FQDN:           "test-worker-node",
 		Username:       "ubuntu",
@@ -20,7 +20,7 @@ func TestRenderCloudInit(t *testing.T) {
 		KubeVersion:    "v1.30.5",
 	}
 
-	result, err := Generate(TestTempl, params)
+	result, err := GenerateCloudInit(CloudInitTestTempl, params)
 	if err != nil {
 		t.Fatalf("Failed to render cloud-init: %v", err)
 	}

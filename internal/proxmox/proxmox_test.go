@@ -1,12 +1,12 @@
-package httpapi
+package proxmox
 
 import (
 	"fmt"
 	"testing"
 	"time"
 
-	"fulcrumproject.org/kube-agent/internal/cloudinit"
 	"fulcrumproject.org/kube-agent/internal/config"
+	"fulcrumproject.org/kube-agent/internal/httpcli"
 	"fulcrumproject.org/kube-agent/internal/ssh"
 	"github.com/stretchr/testify/assert"
 )
@@ -24,9 +24,9 @@ func TestVMIntegration(t *testing.T) {
 	cfg, err := config.Builder().WithEnv("../..").Build()
 	assert.NoError(t, err)
 
-	httpCli := NewHTTPClient(cfg.ProxmoxAPIURL, cfg.ProxmoxAPIToken,
-		WithAuthType(AuthTypePVE),
-		WithSkipTLSVerify(true)) // Skip TLS verification for test environment
+	httpCli := httpcli.NewHTTPClient(cfg.ProxmoxAPIURL, cfg.ProxmoxAPIToken,
+		httpcli.WithAuthType(httpcli.AuthTypePVE),
+		httpcli.WithSkipTLSVerify(true)) // Skip TLS verification for test environment
 	assert.NotNil(t, httpCli)
 
 	cli := NewProxmoxClient(cfg.ProxmoxHost, cfg.ProxmoxStorage, httpCli)
@@ -67,7 +67,7 @@ func TestVMIntegration(t *testing.T) {
 
 		// 2. Generate and upload cloud-init configuration
 		t.Logf("Generating and uploading cloud-init configuration")
-		cloudInitParams := cloudinit.Params{
+		cloudInitParams := CloudInitParams{
 			Hostname:       vmName,
 			FQDN:           vmName,
 			Username:       "ubuntu",
@@ -82,7 +82,7 @@ func TestVMIntegration(t *testing.T) {
 		}
 
 		// Generate cloud-init file
-		cloudInitContent, err := cloudinit.Generate(cloudinit.TestTempl, cloudInitParams)
+		cloudInitContent, err := GenerateCloudInit(CloudInitTestTempl, cloudInitParams)
 		assert.NoError(t, err, "GenerateCloudInitFile should not return an error")
 
 		// Upload cloud-init file via SCP

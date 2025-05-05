@@ -1,4 +1,4 @@
-package httpapi
+package fulcrum
 
 import (
 	"encoding/json"
@@ -6,17 +6,18 @@ import (
 	"net/http"
 
 	"fulcrumproject.org/kube-agent/internal/agent"
+	"fulcrumproject.org/kube-agent/internal/httpcli"
 )
 
 // HTTPFulcrumClient implements FulcrumClient interface using HTTP
 type HTTPFulcrumClient struct {
-	httpClient *Client
+	httpClient *httpcli.Client
 }
 
 // NewFulcrumClient creates a new Fulcrum API client
-func NewFulcrumClient(baseURL string, token string, options ...ClientOption) *HTTPFulcrumClient {
+func NewFulcrumClient(baseURL string, token string, options ...httpcli.ClientOption) *HTTPFulcrumClient {
 	return &HTTPFulcrumClient{
-		httpClient: NewHTTPClient(baseURL, token, options...),
+		httpClient: httpcli.NewHTTPClient(baseURL, token, options...),
 	}
 }
 

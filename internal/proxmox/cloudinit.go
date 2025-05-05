@@ -1,4 +1,4 @@
-package cloudinit
+package proxmox
 
 import (
 	"bytes"
@@ -9,13 +9,13 @@ import (
 type Template string
 
 //go:embed cloudinit.gotmpl
-var Templ Template
+var CloudInitTempl Template
 
 //go:embed cloudinit_test.gotmpl
-var TestTempl Template
+var CloudInitTestTempl Template
 
-// Params contains parameters for cloud-init configuration
-type Params struct {
+// CloudInitParams contains parameters for cloud-init configuration
+type CloudInitParams struct {
 	Hostname       string
 	FQDN           string
 	Username       string
@@ -29,9 +29,9 @@ type Params struct {
 	KubeVersion    string
 }
 
-// Generate generates a cloud-init configuration from the embedded template
+// GenerateCloudInit generates a cloud-init configuration from the embedded template
 // using the provided parameters
-func Generate(templ Template, params Params) (string, error) {
+func GenerateCloudInit(templ Template, params CloudInitParams) (string, error) {
 	tmpl, err := template.New("cloudinit").Parse(string(templ))
 	if err != nil {
 		return "", err

@@ -1,4 +1,4 @@
-package httpapi
+package kamaji
 
 import (
 	"bytes"
@@ -14,11 +14,12 @@ import (
 	"time"
 
 	"fulcrumproject.org/kube-agent/internal/agent"
+	"fulcrumproject.org/kube-agent/internal/httpcli"
 )
 
 // HTTPKamajiClient implements the agent.KamajiClient interface
 type HTTPKamajiClient struct {
-	httpClient        *Client
+	httpClient        *httpcli.Client
 	kubeURL           string
 	adminToken        string
 	tenantCertCache   map[string]*agent.TenantCerts
@@ -26,9 +27,9 @@ type HTTPKamajiClient struct {
 }
 
 // NewKamajiClient creates a new Kamaji API client
-func NewKamajiClient(kubeURL string, adminToken string, options ...ClientOption) *HTTPKamajiClient {
+func NewKamajiClient(kubeURL string, adminToken string, options ...httpcli.ClientOption) *HTTPKamajiClient {
 	return &HTTPKamajiClient{
-		httpClient:        NewHTTPClient(kubeURL, adminToken, options...),
+		httpClient:        httpcli.NewHTTPClient(kubeURL, adminToken, options...),
 		kubeURL:           kubeURL,
 		adminToken:        adminToken,
 		tenantCertCache:   make(map[string]*agent.TenantCerts),
@@ -40,81 +41,15 @@ func NewKamajiClient(kubeURL string, adminToken string, options ...ClientOption)
 func (c *HTTPKamajiClient) CreateTenantControlPlane(name string, version string, replicas int) (*agent.TCPResponse, error) {
 	log.Printf("Creating tenant control plane %s with version %s and %d replicas", name, version, replicas)
 
-	// Create the request payload
-	tcpPayload := &agent.TCPResponse{
-		ApiVersion: "kamaji.clastix.io/v1alpha1",
-		Kind:       "TenantControlPlane",
-		Metadata: struct {
-			Name   string            `json:"name"`
-			Labels map[string]string `json:"labels"`
-		}{
-			Name: name,
-			Labels: map[string]string{
-				"tenant.clastix.io": name,
-			},
-		},
-		Spec: agent.TCPSpec{
-			ControlPlane: struct {
-				Deployment struct {
-					Replicas int `json:"replicas"`
-				} `json:"deployment"`
-				Service struct {
-					ServiceType string `json:"serviceType"`
-				} `json:"service"`
-			}{
-				Deployment: struct {
-					Replicas int `json:"replicas"`
-				}{
-					Replicas: replicas,
-				},
-				Service: struct {
-					ServiceType string `json:"serviceType"`
-				}{
-					ServiceType: "LoadBalancer",
-				},
-			},
-			Kubernetes: struct {
-				Version string `json:"version"`
-				Kubelet struct {
-					Cgroupfs string `json:"cgroupfs"`
-				} `json:"kubelet"`
-			}{
-				Version: version,
-				Kubelet: struct {
-					Cgroupfs string `json:"cgroupfs"`
-				}{
-					Cgroupfs: "systemd",
-				},
-			},
-			NetworkProfile: struct {
-				Port int `json:"port"`
-			}{
-				Port: 6443,
-			},
-			Addons: struct {
-				CoreDNS      map[string]interface{} `json:"coreDNS"`
-				KubeProxy    map[string]interface{} `json:"kubeProxy"`
-				Konnectivity struct {
-					Server struct {
-						Port int `json:"port"`
-					} `json:"server"`
-				} `json:"konnectivity"`
-			}{
-				CoreDNS:   map[string]interface{}{},
-				KubeProxy: map[string]interface{}{},
-				Konnectivity: struct {
-					Server struct {
-						Port int `json:"port"`
-					} `json:"server"`
-				}{
-					Server: struct {
-						Port int `json:"port"`
-					}{
-						Port: 8132,
-					},
-				},
-			},
-		},
+	// Generate the TCP payload using the template
+	params := TCPTemplateParams{
+		Name:     name,
+		Version:  version,
+		Replicas: replicas,
+	}
+	tcpPayload, err := generateTCPPayload(params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate TCP payload: %w", err)
 	}
 
 	// Convert the payload to JSON
@@ -434,26 +369,13 @@ func (c *HTTPKamajiClient) CreateJoinToken(tenantName string, validityHours int)
 	expirationTime := time.Now().Add(time.Duration(validityHours) * time.Hour)
 	expirationStr := expirationTime.UTC().Format(time.RFC3339)
 
-	// Create the token secret payload
-	tokenPayload := map[string]interface{}{
-		"apiVersion": "v1",
-		"metadata": map[string]interface{}{
-			"name":      fmt.Sprintf("bootstrap-token-%s", tokenID),
-			"namespace": "kube-system",
-		},
-		"type": "bootstrap.kubernetes.io/token",
-		"stringData": map[string]string{
-			"auth-extra-groups":              "system:bootstrappers:kubeadm:default-node-token",
-			"token-id":                       tokenID,
-			"token-secret":                   tokenSecret,
-			"expiration":                     expirationStr,
-			"usage-bootstrap-authentication": "true",
-			"usage-bootstrap-signing":        "true",
-		},
+	// Generate the token secret payload using template
+	params := JoinTokenTemplateParams{
+		TokenID:        tokenID,
+		TokenSecret:    tokenSecret,
+		ExpirationTime: expirationStr,
 	}
-
-	// Convert the payload to JSON
-	payloadBytes, err := json.Marshal(tokenPayload)
+	payloadBytes, err := generateJoinTokenPayload(params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal token payload: %w", err)
 	}

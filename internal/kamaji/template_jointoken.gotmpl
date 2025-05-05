@@ -1,0 +1,16 @@
+{
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "bootstrap-token-{{.TokenID}}",
+    "namespace": "kube-system"
+  },
+  "type": "bootstrap.kubernetes.io/token",
+  "stringData": {
+    "auth-extra-groups": "system:bootstrappers:kubeadm:default-node-token",
+    "token-id": "{{.TokenID}}",
+    "token-secret": "{{.TokenSecret}}",
+    "expiration": "{{.ExpirationTime}}",
+    "usage-bootstrap-authentication": "true",
+    "usage-bootstrap-signing": "true"
+  }
+}

@@ -1,4 +1,4 @@
-package httpapi
+package proxmox
 
 import (
 	"encoding/json"
@@ -11,17 +11,18 @@ import (
 	"time"
 
 	"fulcrumproject.org/kube-agent/internal/agent"
+	"fulcrumproject.org/kube-agent/internal/httpcli"
 )
 
 // HTTPProxmoxClient implements the agent.ProxmoxClient interface
 type HTTPProxmoxClient struct {
-	httpClient  *Client
+	httpClient  *httpcli.Client
 	nodeName    string // Proxmox node name (e.g., "pve")
 	storageType string // Default storage type (e.g., "local-lvm")
 }
 
 // NewProxmoxClient creates a new Proxmox API client
-func NewProxmoxClient(nodeName string, storageType string, httpClient *Client) *HTTPProxmoxClient {
+func NewProxmoxClient(nodeName string, storageType string, httpClient *httpcli.Client) *HTTPProxmoxClient {
 	client := &HTTPProxmoxClient{
 		httpClient:  httpClient,
 		nodeName:    nodeName,
