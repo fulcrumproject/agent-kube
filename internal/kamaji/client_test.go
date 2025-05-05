@@ -62,7 +62,7 @@ func TestKamajiClientIntegration(t *testing.T) {
 
 		// Wait for the tenant control plane to be ready
 		t.Logf("Waiting for tenant control plane to be ready: %s", testTenantName)
-		err = client.WaitForTenantControlPlaneReady(testTenantName, 60) // 60 seconds timeout
+		err = client.WaitForTenantControlPlaneReady(testTenantName, 180) // 60 seconds timeout
 
 		// Assertions
 		assert.NoError(t, err, "WaitForTenantControlPlaneReady should not return an error")

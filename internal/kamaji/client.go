@@ -2,9 +2,12 @@ package kamaji
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"time"
 
 	"fulcrumproject.org/kube-agent/internal/agent"
@@ -290,27 +293,10 @@ func (t *TenantClient) CreateJoinToken(tenantName string, validityHours int) (*a
 	}
 	expirationTime := time.Now().Add(time.Duration(validityHours) * time.Hour)
 
-	// Check if the user has permissions to create secrets in kube-system namespace
-	// Try to get a secret first to test permissions
-	_, err = t.tenantClient.CoreV1().Secrets("kube-system").List(
-		context.Background(),
-		metav1.ListOptions{
-			Limit: 1,
-		},
-	)
-
+	// Create the bootstrap token secret
+	_, err = createBootstrapTokenSecret(t.tenantClient, tokenID, tokenSecret, expirationTime)
 	if err != nil {
-		// If we don't have permissions, we'll fake the token creation and skip the actual secret creation
-		// In a real environment, we would need to ensure proper permissions or use a different approach
-		// Log the error but continue with the token generation
-		fmt.Printf("Warning: Unable to access kube-system secrets: %v\n", err)
-		fmt.Println("Proceeding with token generation without creating actual bootstrap token secret")
-	} else {
-		// Only try to create the secret if we have permissions
-		_, err = createBootstrapTokenSecret(t.tenantClient, tokenID, tokenSecret, expirationTime)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create bootstrap token: %w", err)
-		}
+		return nil, fmt.Errorf("failed to create bootstrap token: %w", err)
 	}
 
 	// Get CA hash
@@ -364,16 +350,35 @@ func (c *Client) unstructuredToTCPResponse(u *unstructured.Unstructured) (*agent
 
 // Helper functions for token creation and CA hash
 
+// generateTokenID generates a cryptographically secure random 6-character token ID
+// as per Kubernetes bootstrap token specifications (lowercase letters and numbers)
 func generateTokenID() string {
-	// This should generate a 6-character token ID as per Kubernetes bootstrap token specs
-	// In production code, this should use cryptographic randomness
-	return "abcdef"
+	return generateRandomString(6)
 }
 
+// generateTokenSecret generates a cryptographically secure random 16-character token secret
+// as per Kubernetes bootstrap token specifications (lowercase letters and numbers)
 func generateTokenSecret() string {
-	// This should generate a 16-character token secret as per Kubernetes bootstrap token specs
-	// In production code, this should use cryptographic randomness
-	return "0123456789abcdef"
+	return generateRandomString(16)
+}
+
+// generateRandomString creates a random string of specified length containing lowercase letters and numbers
+func generateRandomString(length int) string {
+	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+	result := make([]byte, length)
+
+	max := big.NewInt(int64(len(chars)))
+	for i := 0; i < length; i++ {
+		index, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			// In production code, we should handle this error more gracefully
+			// For now, if there's a problem with random generation, we panic
+			panic(err)
+		}
+		result[i] = chars[index.Int64()]
+	}
+
+	return string(result)
 }
 
 func createBootstrapTokenSecret(clientset kubernetes.Interface, tokenID, tokenSecret string, expiration time.Time) (*corev1.Secret, error) {
@@ -446,8 +451,8 @@ func getClusterCAHash(clientset kubernetes.Interface) (string, error) {
 	}
 
 	// Calculate the SHA-256 hash of the CA certificate
-	// This is a simplified approach, actual implementation would use crypto/sha256
-	caHash := fmt.Sprintf("sha256:%x", caBytes[:20]) // Just a sample, not the real calculation
+	hash := sha256.Sum256(caBytes)
+	caHash := fmt.Sprintf("sha256:%x", hash)
 
 	return caHash, nil
 }
