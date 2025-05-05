@@ -60,6 +60,26 @@ func TestKamajiClientIntegration(t *testing.T) {
 
 		t.Logf("Tenant control plane retrieved successfully")
 
+		// Wait for the tenant control plane to be ready
+		t.Logf("Waiting for tenant control plane to be ready: %s", testTenantName)
+		err = client.WaitForTenantControlPlaneReady(testTenantName, 60) // 60 seconds timeout
+
+		// Assertions
+		assert.NoError(t, err, "WaitForTenantControlPlaneReady should not return an error")
+		t.Logf("Tenant control plane is ready")
+
+		// Get the tenant kubeconfig
+		t.Logf("Getting kubeconfig for tenant: %s", testTenantName)
+		kubeconfigResponse, err := client.GetTenantKubeconfig(testTenantName)
+
+		// Assertions
+		assert.NoError(t, err, "GetTenantKubeconfig should not return an error")
+		assert.NotNil(t, kubeconfigResponse, "GetTenantKubeconfig should return a response")
+		assert.NotEmpty(t, kubeconfigResponse.Config, "Kubeconfig should not be empty")
+		assert.NotEmpty(t, kubeconfigResponse.Endpoint, "Endpoint should not be empty")
+		assert.NotEmpty(t, kubeconfigResponse.SecretName, "Secret name should not be empty")
+		t.Logf("Tenant kubeconfig retrieved successfully")
+
 		// Delete the tenant control plane
 		t.Logf("Deleting tenant control plane: %s", testTenantName)
 		err = client.DeleteTenantControlPlane(testTenantName)
