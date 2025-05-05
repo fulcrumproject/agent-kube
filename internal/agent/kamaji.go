@@ -24,8 +24,18 @@ type KamajiClient interface {
 	// GetTenantKubeconfig gets the kubeconfig for a tenant control plane
 	GetTenantKubeconfig(name string) (*KubeconfigResponse, error)
 
+	// GetTenantClient gets a subcluster client
+	GetTenantClient(name string) (KamajiTenantClient, error)
+}
+
+// KamajiTenantClient defines the interface for interacting with Kamaji API
+type KamajiTenantClient interface {
+
 	// CreateJoinToken creates a bootstrap token for nodes to join the cluster
 	CreateJoinToken(tenantName string, validityHours int) (*JoinTokenResponse, error)
+
+	// DeleteWorkerNode deletes a worker node
+	DeleteWorkerNode(nodeName string) error
 }
 
 // TCPResponse represents the response from the Kamaji API for TCP operations
