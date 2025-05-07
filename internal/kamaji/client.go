@@ -92,8 +92,8 @@ type TCPSpec struct {
 		Port int `json:"port"`
 	} `json:"networkProfile"`
 	Addons struct {
-		CoreDNS      map[string]interface{} `json:"coreDNS"`
-		KubeProxy    map[string]interface{} `json:"kubeProxy"`
+		CoreDNS      map[string]any `json:"coreDNS"`
+		KubeProxy    map[string]any `json:"kubeProxy"`
 		Konnectivity struct {
 			Server struct {
 				Port int `json:"port"`
@@ -155,39 +155,39 @@ func NewClient(apiURL, token string) (agent.KamajiClient, error) {
 func (c *Client) CreateTenantControlPlane(ctx context.Context, name string, version string, replicas int) error {
 	// Define the TenantControlPlane resource
 	tcp := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": fmt.Sprintf("%s/%s", TCPGroup, TCPVersion),
 			"kind":       "TenantControlPlane",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name": name,
-				"labels": map[string]interface{}{
+				"labels": map[string]any{
 					"created-by":        "fulcrum-kube-agent",
 					"tenant.clastix.io": name,
 				},
 			},
-			"spec": map[string]interface{}{
-				"controlPlane": map[string]interface{}{
-					"deployment": map[string]interface{}{
+			"spec": map[string]any{
+				"controlPlane": map[string]any{
+					"deployment": map[string]any{
 						"replicas": replicas,
 					},
-					"service": map[string]interface{}{
+					"service": map[string]any{
 						"serviceType": "LoadBalancer",
 					},
 				},
-				"kubernetes": map[string]interface{}{
+				"kubernetes": map[string]any{
 					"version": version,
-					"kubelet": map[string]interface{}{
+					"kubelet": map[string]any{
 						"cgroupfs": "systemd",
 					},
 				},
-				"networkProfile": map[string]interface{}{
+				"networkProfile": map[string]any{
 					"port": 6443,
 				},
-				"addons": map[string]interface{}{
-					"coreDNS":   map[string]interface{}{},
-					"kubeProxy": map[string]interface{}{},
-					"konnectivity": map[string]interface{}{
-						"server": map[string]interface{}{
+				"addons": map[string]any{
+					"coreDNS":   map[string]any{},
+					"kubeProxy": map[string]any{},
+					"konnectivity": map[string]any{
+						"server": map[string]any{
 							"port": 8132,
 						},
 					},
@@ -381,23 +381,48 @@ func (c *Client) GetTenantClient(ctx context.Context, name string) (agent.Kamaji
 		return nil, fmt.Errorf("failed to create tenant config from kubeconfig: %w", err)
 	}
 
-	tenantClientset, err := kubernetes.NewForConfig(tenantConfig)
+	tc, err := NewTenantClient(name, tenantConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create tenant clientset: %w", err)
+		return nil, fmt.Errorf("failed to create tenant client: %w", err)
 	}
 
-	return &TenantClient{
-		tenantName:   name,
-		tenantConfig: tenantConfig,
-		tenantClient: tenantClientset,
-	}, nil
+	return tc, nil
 }
 
 // TenantClient implements the KubeClient interface for a specific tenant
 type TenantClient struct {
-	tenantName   string
-	tenantConfig *rest.Config
-	tenantClient kubernetes.Interface
+	tenantName    string
+	tenantConfig  *rest.Config
+	tenantClient  kubernetes.Interface
+	dynamicClient *dynamic.DynamicClient
+	restMapper    *restmapper.DeferredDiscoveryRESTMapper
+}
+
+func NewTenantClient(tenantName string, tenantConfig *rest.Config) (*TenantClient, error) {
+	clientset, err := kubernetes.NewForConfig(tenantConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tenant clientset: %w", err)
+	}
+
+	dynamicClient, err := dynamic.NewForConfig(tenantConfig)
+	if err != nil {
+		return nil, fmt.Errorf("error creating dynamic client: %w", err)
+	}
+
+	// Create a discovery client and a RESTMapper
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(tenantConfig)
+	if err != nil {
+		return nil, fmt.Errorf("error creating discovery client: %w", err)
+	}
+	mapper := restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(discoveryClient))
+
+	return &TenantClient{
+		tenantName:    tenantName,
+		tenantConfig:  tenantConfig,
+		tenantClient:  clientset,
+		dynamicClient: dynamicClient,
+		restMapper:    mapper,
+	}, nil
 }
 
 // CreateJoinToken creates a bootstrap token for nodes to join the cluster
@@ -483,51 +508,48 @@ func (t *TenantClient) DeleteWorkerNode(ctx context.Context, nodeName string) er
 	return nil
 }
 
-// ApplyCalicoResources applies Calico networking resources to the tenant cluster
+func (t *TenantClient) CreateCalicoResources(ctx context.Context) error {
+	return t.createResources(ctx, calicoYamlContent)
+}
 
-func (t *TenantClient) ApplyCalicoResources(ctx context.Context) error {
-	// Create a dynamic client for the tenant cluster
-	dynamicClient, err := dynamic.NewForConfig(t.tenantConfig)
-	if err != nil {
-		return fmt.Errorf("error creating dynamic client: %w", err)
-	}
+func (t *TenantClient) createResources(ctx context.Context, yaml string) error {
+	docs := strings.Split(yaml, "---")
 
-	// Create a discovery client and a RESTMapper
-	discoveryClient, err := discovery.NewDiscoveryClientForConfig(t.tenantConfig)
-	if err != nil {
-		return fmt.Errorf("error creating discovery client: %w", err)
-	}
-	mapper := restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(discoveryClient))
-
-	// Split the embedded YAML content into separate documents and apply each one
-	docs := strings.Split(calicoYamlContent, "---")
 	for _, doc := range docs {
 		if strings.TrimSpace(doc) == "" {
 			continue
 		}
-
-		var obj map[string]interface{}
-		decoder := yaml.NewYAMLToJSONDecoder(strings.NewReader(doc))
-		if err := decoder.Decode(&obj); err != nil {
-			continue
-		}
-		if len(obj) == 0 {
-			continue
-		}
-
-		u := &unstructured.Unstructured{Object: obj}
-
-		// Get the REST mapping from the RESTMapper
-		mapping, err := mapper.RESTMapping(u.GroupVersionKind().GroupKind(), u.GroupVersionKind().Version)
+		err := t.createResource(ctx, doc)
 		if err != nil {
-			return fmt.Errorf("failed to get REST mapping for %s: %w", u.GroupVersionKind(), err)
+			return fmt.Errorf("error creating resource: %w", err)
 		}
+	}
 
-		resourceClient := dynamicClient.Resource(mapping.Resource).Namespace(u.GetNamespace())
-		_, err = resourceClient.Create(ctx, u, metav1.CreateOptions{})
-		if err != nil {
-			return fmt.Errorf("error creating %s '%s' in %s: %w", u.GetKind(), u.GetName(), u.GetNamespace(), err)
-		}
+	return nil
+}
+
+func (t *TenantClient) createResource(ctx context.Context, doc string) error {
+	var obj map[string]any
+	decoder := yaml.NewYAMLToJSONDecoder(strings.NewReader(doc))
+	if err := decoder.Decode(&obj); err != nil {
+		return err
+	}
+	if len(obj) == 0 {
+		return nil
+	}
+
+	u := &unstructured.Unstructured{Object: obj}
+
+	// Get the REST mapping from the RESTMapper
+	mapping, err := t.restMapper.RESTMapping(u.GroupVersionKind().GroupKind(), u.GroupVersionKind().Version)
+	if err != nil {
+		return fmt.Errorf("failed to get REST mapping for %s: %w", u.GroupVersionKind(), err)
+	}
+
+	resourceClient := t.dynamicClient.Resource(mapping.Resource).Namespace(u.GetNamespace())
+	_, err = resourceClient.Create(ctx, u, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("error creating %s '%s' in %s: %w", u.GetKind(), u.GetName(), u.GetNamespace(), err)
 	}
 
 	return nil

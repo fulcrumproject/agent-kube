@@ -83,7 +83,7 @@ func TestKamajiClientIntegration(t *testing.T) {
 
 		// Apply Calico resources
 		t.Logf("Applying Calico resources to tenant: %s", testTenantName)
-		err = tenantClient.ApplyCalicoResources(ctx)
+		err = tenantClient.CreateCalicoResources(ctx)
 
 		require.NoError(t, err, "ApplyCalicoResources should not return an error")
 		t.Logf("Calico resources applied successfully")
