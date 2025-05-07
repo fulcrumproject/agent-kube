@@ -5,11 +5,13 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"fulcrumproject.org/kube-agent/internal/agent"
@@ -19,9 +21,13 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/client-go/discovery"
+	memory "k8s.io/client-go/discovery/cached"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -44,6 +50,9 @@ const (
 	// PollInterval is the interval between status checks
 	PollInterval = 5 * time.Second
 )
+
+//go:embed calico.yaml
+var calicoYamlContent string
 
 var tcpGVR = schema.GroupVersionResource{
 	Group:    TCPGroup,
@@ -356,7 +365,6 @@ func (c *Client) getTenantControlPlane(ctx context.Context, name string) (*TCPRe
 	}
 
 	return &response, nil
-
 }
 
 // GetTenantClient gets a subcluster client for the given tenant
@@ -382,7 +390,6 @@ func (c *Client) GetTenantClient(ctx context.Context, name string) (agent.Kamaji
 		tenantName:   name,
 		tenantConfig: tenantConfig,
 		tenantClient: tenantClientset,
-		kamajiClient: c,
 	}, nil
 }
 
@@ -391,7 +398,6 @@ type TenantClient struct {
 	tenantName   string
 	tenantConfig *rest.Config
 	tenantClient kubernetes.Interface
-	kamajiClient *Client
 }
 
 // CreateJoinToken creates a bootstrap token for nodes to join the cluster
@@ -472,6 +478,56 @@ func (t *TenantClient) DeleteWorkerNode(ctx context.Context, nodeName string) er
 
 	if err != nil {
 		return fmt.Errorf("failed to delete worker node %s: %w", nodeName, err)
+	}
+
+	return nil
+}
+
+// ApplyCalicoResources applies Calico networking resources to the tenant cluster
+
+func (t *TenantClient) ApplyCalicoResources(ctx context.Context) error {
+	// Create a dynamic client for the tenant cluster
+	dynamicClient, err := dynamic.NewForConfig(t.tenantConfig)
+	if err != nil {
+		return fmt.Errorf("error creating dynamic client: %w", err)
+	}
+
+	// Create a discovery client and a RESTMapper
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(t.tenantConfig)
+	if err != nil {
+		return fmt.Errorf("error creating discovery client: %w", err)
+	}
+	mapper := restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(discoveryClient))
+
+	// Split the embedded YAML content into separate documents and apply each one
+	docs := strings.Split(calicoYamlContent, "---")
+	for _, doc := range docs {
+		if strings.TrimSpace(doc) == "" {
+			continue
+		}
+
+		var obj map[string]interface{}
+		decoder := yaml.NewYAMLToJSONDecoder(strings.NewReader(doc))
+		if err := decoder.Decode(&obj); err != nil {
+			continue
+		}
+		if len(obj) == 0 {
+			continue
+		}
+
+		u := &unstructured.Unstructured{Object: obj}
+
+		// Get the REST mapping from the RESTMapper
+		mapping, err := mapper.RESTMapping(u.GroupVersionKind().GroupKind(), u.GroupVersionKind().Version)
+		if err != nil {
+			return fmt.Errorf("failed to get REST mapping for %s: %w", u.GroupVersionKind(), err)
+		}
+
+		resourceClient := dynamicClient.Resource(mapping.Resource).Namespace(u.GetNamespace())
+		_, err = resourceClient.Create(ctx, u, metav1.CreateOptions{})
+		if err != nil {
+			return fmt.Errorf("error creating %s '%s' in %s: %w", u.GetKind(), u.GetName(), u.GetNamespace(), err)
+		}
 	}
 
 	return nil

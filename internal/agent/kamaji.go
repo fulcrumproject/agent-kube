@@ -48,4 +48,7 @@ type KamajiTenantClient interface {
 
 	// DeleteWorkerNode deletes a worker node
 	DeleteWorkerNode(ctx context.Context, nodeName string) error
+
+	// ApplyCalicoResources applies Calico networking resources to the tenant cluster
+	ApplyCalicoResources(ctx context.Context) error
 }
