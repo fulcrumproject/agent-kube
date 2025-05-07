@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
+	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"math/big"
 	"time"
@@ -13,7 +15,6 @@ import (
 	"fulcrumproject.org/kube-agent/internal/agent"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -50,19 +51,68 @@ var tcpGVR = schema.GroupVersionResource{
 	Resource: TCPResource,
 }
 
+// TCPResponse represents the response from the Kamaji API for TCP operations
+type TCPResponse struct {
+	ApiVersion string `json:"apiVersion"`
+	Kind       string `json:"kind"`
+	Metadata   struct {
+		Name   string            `json:"name"`
+		Labels map[string]string `json:"labels"`
+	} `json:"metadata"`
+	Spec   TCPSpec   `json:"spec"`
+	Status TCPStatus `json:"status,omitempty"`
+}
+
+// TCPSpec represents the specification of a TenantControlPlane
+type TCPSpec struct {
+	ControlPlane struct {
+		Deployment struct {
+			Replicas int `json:"replicas"`
+		} `json:"deployment"`
+		Service struct {
+			ServiceType string `json:"serviceType"`
+		} `json:"service"`
+	} `json:"controlPlane"`
+	Kubernetes struct {
+		Version string `json:"version"`
+		Kubelet struct {
+			Cgroupfs string `json:"cgroupfs"`
+		} `json:"kubelet"`
+	} `json:"kubernetes"`
+	NetworkProfile struct {
+		Port int `json:"port"`
+	} `json:"networkProfile"`
+	Addons struct {
+		CoreDNS      map[string]interface{} `json:"coreDNS"`
+		KubeProxy    map[string]interface{} `json:"kubeProxy"`
+		Konnectivity struct {
+			Server struct {
+				Port int `json:"port"`
+			} `json:"server"`
+		} `json:"konnectivity"`
+	} `json:"addons"`
+}
+
+// TCPStatus represents the status of a TenantControlPlane
+type TCPStatus struct {
+	ControlPlaneEndpoint string `json:"controlPlaneEndpoint"`
+	KubernetesResources  struct {
+		Version struct {
+			Status string `json:"status"`
+		} `json:"version"`
+	} `json:"kubernetesResources"`
+	Kubeconfig struct {
+		Admin struct {
+			SecretName string `json:"secretName"`
+		} `json:"admin"`
+	} `json:"kubeconfig"`
+}
+
 // Client implements the KamajiClient interface using k8s.io client libraries
 type Client struct {
 	dynamicClient dynamic.Interface
 	clientset     kubernetes.Interface
 	config        *rest.Config
-}
-
-// TenantClient implements the KubeClient interface for a specific tenant
-type TenantClient struct {
-	tenantName   string
-	tenantConfig *rest.Config
-	tenantClient kubernetes.Interface
-	kamajiClient *Client
 }
 
 // NewClient creates a new KamajiClient using the provided API URL and token
@@ -93,7 +143,7 @@ func NewClient(apiURL, token string) (agent.KamajiClient, error) {
 }
 
 // CreateTenantControlPlane creates a new tenant control plane (Kubernetes cluster)
-func (c *Client) CreateTenantControlPlane(name string, version string, replicas int) (*agent.TCPResponse, error) {
+func (c *Client) CreateTenantControlPlane(ctx context.Context, name string, version string, replicas int) error {
 	// Define the TenantControlPlane resource
 	tcp := &unstructured.Unstructured{
 		Object: map[string]interface{}{
@@ -138,21 +188,20 @@ func (c *Client) CreateTenantControlPlane(name string, version string, replicas 
 	}
 
 	// Create the resource
-	result, err := c.dynamicClient.Resource(tcpGVR).Namespace(KamajiNamespace).Create(
+	_, err := c.dynamicClient.Resource(tcpGVR).Namespace(KamajiNamespace).Create(
 		context.Background(),
 		tcp,
 		metav1.CreateOptions{},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create tenant control plane: %w", err)
+		return fmt.Errorf("failed to create tenant control plane: %w", err)
 	}
 
-	// Convert the result to TCPResponse
-	return c.unstructuredToTCPResponse(result)
+	return nil
 }
 
 // DeleteTenantControlPlane deletes an existing tenant control plane
-func (c *Client) DeleteTenantControlPlane(name string) error {
+func (c *Client) DeleteTenantControlPlane(ctx context.Context, name string) error {
 	err := c.dynamicClient.Resource(tcpGVR).Namespace(KamajiNamespace).Delete(
 		context.Background(),
 		name,
@@ -164,56 +213,32 @@ func (c *Client) DeleteTenantControlPlane(name string) error {
 	return nil
 }
 
-// GetTenantControlPlane gets information about a specific tenant control plane
-func (c *Client) GetTenantControlPlane(name string) (*agent.TCPResponse, error) {
-	result, err := c.dynamicClient.Resource(tcpGVR).Namespace(KamajiNamespace).Get(
-		context.Background(),
-		name,
-		metav1.GetOptions{},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get tenant control plane: %w", err)
-	}
-
-	return c.unstructuredToTCPResponse(result)
-}
-
-// GetTenantControlPlaneStatus gets the status of a tenant control plane
-func (c *Client) GetTenantControlPlaneStatus(name string) (string, error) {
-	tcp, err := c.GetTenantControlPlane(name)
-	if err != nil {
-		return "", err
-	}
-
-	// Return the status
-	return tcp.Status.KubernetesResources.Version.Status, nil
-}
-
 // WaitForTenantControlPlaneReady waits for a tenant control plane to be ready
-func (c *Client) WaitForTenantControlPlaneReady(name string, timeoutSec int) error {
-	timeout := time.Duration(timeoutSec) * time.Second
-	if timeout == 0 {
-		timeout = DefaultTimeout
-	}
-
-	return wait.PollImmediate(PollInterval, timeout, func() (bool, error) {
-		status, err := c.GetTenantControlPlaneStatus(name)
+func (c *Client) WaitForTenantControlPlaneReady(ctx context.Context, name string) error {
+	// Poll the status of the TenantControlPlane resource
+	err := wait.PollUntilContextTimeout(ctx, PollInterval, DefaultTimeout, true, func(ctx context.Context) (bool, error) {
+		tcp, err := c.getTenantControlPlane(ctx, name)
 		if err != nil {
-			if errors.IsNotFound(err) {
-				return false, nil // Keep waiting
-			}
-			return false, err
+			return false, fmt.Errorf("failed to get tenant control plane: %w", err)
 		}
 
-		// Check if the status indicates the control plane is ready
-		return status == "Ready", nil
+		// Check if the control plane is ready
+		if tcp.Status.KubernetesResources.Version.Status == "Ready" {
+			return true, nil
+		}
+
+		return false, nil
 	})
+	if err != nil {
+		return fmt.Errorf("failed to wait for tenant control plane to be ready: %w", err)
+	}
+	return nil
 }
 
 // GetTenantKubeconfig gets the kubeconfig for a tenant control plane
-func (c *Client) GetTenantKubeconfig(name string) (*agent.KubeconfigResponse, error) {
+func (c *Client) GetTenantKubeConfig(ctx context.Context, name string) (*agent.KubeConfig, error) {
 	// First get the TCP to find the secret name
-	tcp, err := c.GetTenantControlPlane(name)
+	tcp, err := c.getTenantControlPlane(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -239,17 +264,105 @@ func (c *Client) GetTenantKubeconfig(name string) (*agent.KubeconfigResponse, er
 		return nil, fmt.Errorf("admin.conf key not found in secret %s", secretName)
 	}
 
-	return &agent.KubeconfigResponse{
-		Config:     string(kubeconfigBytes),
-		Endpoint:   tcp.Status.ControlPlaneEndpoint,
-		SecretName: secretName,
+	return &agent.KubeConfig{
+		Config:   string(kubeconfigBytes),
+		Endpoint: tcp.Status.ControlPlaneEndpoint,
 	}, nil
 }
 
+func (c *Client) GetTenantCAHash(ctx context.Context, name string) (string, error) {
+	// Get the kubeconfig for the tenant
+	kubeConfig, err := c.GetTenantKubeConfig(ctx, name)
+	if err != nil {
+		return "", fmt.Errorf("failed to get tenant kubeconfig: %w", err)
+	}
+
+	// Parse the kubeconfig to access its contents
+	config, err := clientcmd.Load([]byte(kubeConfig.Config))
+	if err != nil {
+		return "", fmt.Errorf("failed to parse kubeconfig: %w", err)
+	}
+
+	// Get the CA data from the kubeconfig
+	// We use the current-context to find the correct cluster and its certificate data
+	currentContext := config.CurrentContext
+	if currentContext == "" {
+		return "", fmt.Errorf("no current-context found in kubeconfig")
+	}
+
+	context, exists := config.Contexts[currentContext]
+	if !exists {
+		return "", fmt.Errorf("context %s not found in kubeconfig", currentContext)
+	}
+
+	clusterName := context.Cluster
+	cluster, exists := config.Clusters[clusterName]
+	if !exists {
+		return "", fmt.Errorf("cluster %s not found in kubeconfig", clusterName)
+	}
+
+	// Check if we have CA data
+	if len(cluster.CertificateAuthorityData) == 0 {
+		return "", fmt.Errorf("no certificate authority data found in kubeconfig for cluster %s", clusterName)
+	}
+
+	// Parse the certificate
+	block, _ := pem.Decode(cluster.CertificateAuthorityData)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return "", fmt.Errorf("failed to parse certificate PEM block")
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse X509 certificate: %w", err)
+	}
+
+	// Marshal the public key to DER format
+	pubKeyDER, err := x509.MarshalPKIXPublicKey(cert.PublicKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal public key to DER format: %w", err)
+	}
+
+	// Calculate SHA256 hash of the DER-encoded public key
+	hash := sha256.Sum256(pubKeyDER)
+
+	// Encode the hash with proper prefix
+	encHash := hex.EncodeToString(hash[:])
+
+	// Return the hash as a hex string
+	return fmt.Sprintf("sha256:%s", encHash), nil
+}
+
+func (c *Client) getTenantControlPlane(ctx context.Context, name string) (*TCPResponse, error) {
+	u, err := c.dynamicClient.Resource(tcpGVR).Namespace(KamajiNamespace).Get(
+		context.Background(),
+		name,
+		metav1.GetOptions{},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tenant control plane: %w", err)
+	}
+
+	// Convert the unstructured object to JSON
+	jsonData, err := json.Marshal(u.Object)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal unstructured to JSON: %w", err)
+	}
+
+	// Unmarshal into the TCPResponse struct
+	var response TCPResponse
+	if err := json.Unmarshal(jsonData, &response); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal JSON to TCP response: %w", err)
+	}
+
+	return &response, nil
+
+}
+
 // GetTenantClient gets a subcluster client for the given tenant
-func (c *Client) GetTenantClient(name string) (agent.KamajiTenantClient, error) {
+func (c *Client) GetTenantClient(ctx context.Context, name string) (agent.KamajiTenantClient, error) {
 	// Get the kubeconfig to access the tenant cluster
-	kubeconfigResp, err := c.GetTenantKubeconfig(name)
+	kubeconfigResp, err := c.GetTenantKubeConfig(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tenant kubeconfig: %w", err)
 	}
@@ -273,18 +386,19 @@ func (c *Client) GetTenantClient(name string) (agent.KamajiTenantClient, error) 
 	}, nil
 }
 
-// CreateJoinToken creates a bootstrap token for nodes to join the cluster
-func (t *TenantClient) CreateJoinToken(tenantName string, validityHours int) (*agent.JoinTokenResponse, error) {
-	// Use the tenant name from the parameter, ignoring t.tenantName for interface compatibility
-	// Get the tenant control plane first to ensure it exists
-	tcp, err := t.kamajiClient.GetTenantControlPlane(tenantName)
-	if err != nil {
-		return nil, err
-	}
+// TenantClient implements the KubeClient interface for a specific tenant
+type TenantClient struct {
+	tenantName   string
+	tenantConfig *rest.Config
+	tenantClient kubernetes.Interface
+	kamajiClient *Client
+}
 
+// CreateJoinToken creates a bootstrap token for nodes to join the cluster
+func (t *TenantClient) CreateJoinToken(ctx context.Context, tenantName string, validityHours int) (*agent.JoinTokenResponse, error) {
 	// Generate token ID and secret
-	tokenID := generateTokenID()
-	tokenSecret := generateTokenSecret()
+	tokenID := generateRandomString(6)
+	tokenSecret := generateRandomString(16)
 	fullToken := fmt.Sprintf("%s.%s", tokenID, tokenSecret)
 
 	// Calculate expiration time
@@ -294,72 +408,17 @@ func (t *TenantClient) CreateJoinToken(tenantName string, validityHours int) (*a
 	expirationTime := time.Now().Add(time.Duration(validityHours) * time.Hour)
 
 	// Create the bootstrap token secret
-	_, err = createBootstrapTokenSecret(t.tenantClient, tokenID, tokenSecret, expirationTime)
+	_, err := createBootstrapTokenSecret(t.tenantClient, tokenID, tokenSecret, expirationTime)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create bootstrap token: %w", err)
-	}
-
-	// Get CA hash
-	caHash, err := getClusterCAHash(t.tenantClient)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get CA hash: %w", err)
 	}
 
 	return &agent.JoinTokenResponse{
 		TokenID:        tokenID,
 		TokenSecret:    tokenSecret,
 		FullToken:      fullToken,
-		CAHash:         caHash,
-		Endpoint:       tcp.Status.ControlPlaneEndpoint,
 		ExpirationTime: expirationTime,
 	}, nil
-}
-
-// DeleteWorkerNode deletes a worker node from the tenant cluster
-func (t *TenantClient) DeleteWorkerNode(nodeName string) error {
-	// Delete the node from the Kubernetes cluster
-	err := t.tenantClient.CoreV1().Nodes().Delete(
-		context.Background(),
-		nodeName,
-		metav1.DeleteOptions{},
-	)
-
-	if err != nil {
-		return fmt.Errorf("failed to delete worker node %s: %w", nodeName, err)
-	}
-
-	return nil
-}
-
-// unstructuredToTCPResponse converts an unstructured resource to a TCPResponse
-func (c *Client) unstructuredToTCPResponse(u *unstructured.Unstructured) (*agent.TCPResponse, error) {
-	// Convert the unstructured object to JSON
-	jsonData, err := json.Marshal(u.Object)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal unstructured to JSON: %w", err)
-	}
-
-	// Unmarshal into the TCPResponse struct
-	var response agent.TCPResponse
-	if err := json.Unmarshal(jsonData, &response); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal JSON to TCP response: %w", err)
-	}
-
-	return &response, nil
-}
-
-// Helper functions for token creation and CA hash
-
-// generateTokenID generates a cryptographically secure random 6-character token ID
-// as per Kubernetes bootstrap token specifications (lowercase letters and numbers)
-func generateTokenID() string {
-	return generateRandomString(6)
-}
-
-// generateTokenSecret generates a cryptographically secure random 16-character token secret
-// as per Kubernetes bootstrap token specifications (lowercase letters and numbers)
-func generateTokenSecret() string {
-	return generateRandomString(16)
 }
 
 // generateRandomString creates a random string of specified length containing lowercase letters and numbers
@@ -402,57 +461,18 @@ func createBootstrapTokenSecret(clientset kubernetes.Interface, tokenID, tokenSe
 	return clientset.CoreV1().Secrets("kube-system").Create(context.Background(), secret, metav1.CreateOptions{})
 }
 
-func getClusterCAHash(clientset kubernetes.Interface) (string, error) {
-	// Get the cluster CA certificate from the cluster-info ConfigMap
-	configMap, err := clientset.CoreV1().ConfigMaps("kube-public").Get(
+// DeleteWorkerNode deletes a worker node from the tenant cluster
+func (t *TenantClient) DeleteWorkerNode(ctx context.Context, nodeName string) error {
+	// Delete the node from the Kubernetes cluster
+	err := t.tenantClient.CoreV1().Nodes().Delete(
 		context.Background(),
-		"cluster-info",
-		metav1.GetOptions{},
+		nodeName,
+		metav1.DeleteOptions{},
 	)
+
 	if err != nil {
-		return "", fmt.Errorf("failed to get cluster-info ConfigMap: %w", err)
+		return fmt.Errorf("failed to delete worker node %s: %w", nodeName, err)
 	}
 
-	kubeconfigStr, found := configMap.Data["kubeconfig"]
-	if !found {
-		return "", fmt.Errorf("kubeconfig not found in cluster-info ConfigMap")
-	}
-
-	// Parse the kubeconfig to extract the CA certificate
-	var kubeconfig map[string]interface{}
-	if err := json.Unmarshal([]byte(kubeconfigStr), &kubeconfig); err != nil {
-		return "", fmt.Errorf("failed to parse kubeconfig: %w", err)
-	}
-
-	clusters, ok := kubeconfig["clusters"].([]interface{})
-	if !ok || len(clusters) == 0 {
-		return "", fmt.Errorf("failed to extract clusters from kubeconfig")
-	}
-
-	cluster, ok := clusters[0].(map[string]interface{})
-	if !ok {
-		return "", fmt.Errorf("invalid cluster structure in kubeconfig")
-	}
-
-	clusterData, ok := cluster["cluster"].(map[string]interface{})
-	if !ok {
-		return "", fmt.Errorf("invalid cluster data structure in kubeconfig")
-	}
-
-	caData, ok := clusterData["certificate-authority-data"].(string)
-	if !ok {
-		return "", fmt.Errorf("CA data not found in kubeconfig")
-	}
-
-	// Decode the base64-encoded CA data
-	caBytes, err := base64.StdEncoding.DecodeString(caData)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode CA data: %w", err)
-	}
-
-	// Calculate the SHA-256 hash of the CA certificate
-	hash := sha256.Sum256(caBytes)
-	caHash := fmt.Sprintf("sha256:%x", hash)
-
-	return caHash, nil
+	return nil
 }
