@@ -11,7 +11,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 //cat sha_test.crt | openssl x509 -pubkey | openssl pkey -pubin -outform DER | openssl dgst -sha256 | sed 's/^.* //'
@@ -50,7 +50,7 @@ func TestSha256Crt(t *testing.T) {
 	pubKeyBase64 := base64.StdEncoding.EncodeToString(pubKeyDER)
 	fmt.Println("DER Public Key (base64):")
 	fmt.Println(pubKeyBase64)
-	assert.Equal(t, "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA45hkyyVDhtRgcCjtC9Fgh/9i7ojjEm4Bf9uU72m2viM6AsUF6toVJNGOhXk2PaoP2mZQ2CZ4HyaO9fLuX/QXWH8nKlaInVzlQby+JFZ5K5VRHyAuCGwbHt6ueVkAGfFUD9Z17Ui7So6cSEfn6+AGM7IabKFSN73DnUmOguwzT9I5ONIyygNQHwn0Y97LoMOD/jicFloWeszZSr8NzfisSptvdYrSZ/IVqvrbi18jOzSHdOpAB4TCVF3e50Nb5VzgCpDO1S1Y3JuwpNNmiHFOTh/SajK59liDBeCHEX/pdG5U7tUmctO1PjiuKJaSVqAx2wLO1Hw6BVDoY3oeWdaaGQIDAQAB", pubKeyBase64)
+	require.Equal(t, "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA45hkyyVDhtRgcCjtC9Fgh/9i7ojjEm4Bf9uU72m2viM6AsUF6toVJNGOhXk2PaoP2mZQ2CZ4HyaO9fLuX/QXWH8nKlaInVzlQby+JFZ5K5VRHyAuCGwbHt6ueVkAGfFUD9Z17Ui7So6cSEfn6+AGM7IabKFSN73DnUmOguwzT9I5ONIyygNQHwn0Y97LoMOD/jicFloWeszZSr8NzfisSptvdYrSZ/IVqvrbi18jOzSHdOpAB4TCVF3e50Nb5VzgCpDO1S1Y3JuwpNNmiHFOTh/SajK59liDBeCHEX/pdG5U7tUmctO1PjiuKJaSVqAx2wLO1Hw6BVDoY3oeWdaaGQIDAQAB", pubKeyBase64)
 
 	// Step 6: SHA-256 hash of the DER
 	hash := sha256.Sum256(pubKeyDER)
@@ -58,5 +58,5 @@ func TestSha256Crt(t *testing.T) {
 	encHash := hex.EncodeToString(hash[:])
 	fmt.Println(encHash)
 
-	assert.Equal(t, "b1e40b13c33172005655bf2cf8aed10ec7c2125eb0aeffc8e24fc465269b0ae6", encHash)
+	require.Equal(t, "b1e40b13c33172005655bf2cf8aed10ec7c2125eb0aeffc8e24fc465269b0ae6", encHash)
 }

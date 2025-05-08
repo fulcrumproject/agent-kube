@@ -8,7 +8,7 @@ import (
 	"fulcrumproject.org/kube-agent/internal/config"
 	"fulcrumproject.org/kube-agent/internal/httpcli"
 	"fulcrumproject.org/kube-agent/internal/ssh"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // generateTestVMID creates a test VM ID that's unlikely to conflict with existing VMs
@@ -22,15 +22,15 @@ func generateTestVMID() int {
 // It will only run if the INTEGRATION_TEST environment variable is set to true
 func TestVMIntegration(t *testing.T) {
 	cfg, err := config.Builder().WithEnv("../..").Build()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	httpCli := httpcli.NewHTTPClient(cfg.ProxmoxAPIURL, cfg.ProxmoxAPIToken,
 		httpcli.WithAuthType(httpcli.AuthTypePVE),
 		httpcli.WithSkipTLSVerify(true)) // Skip TLS verification for test environment
-	assert.NotNil(t, httpCli)
+	require.NotNil(t, httpCli)
 
 	cli := NewProxmoxClient(cfg.ProxmoxHost, cfg.ProxmoxStorage, httpCli)
-	assert.NotNil(t, cli)
+	require.NotNil(t, cli)
 
 	scpOpts := ssh.Options{
 		Host:           cfg.ProxmoxCIHost,
@@ -51,17 +51,17 @@ func TestVMIntegration(t *testing.T) {
 
 		// 1. Clone the VM
 		cloneResp, err := cli.CloneVM(cfg.ProxmoxTemplate, testVMID, vmName)
-		assert.NoError(t, err, "CloneVM should not return an error")
-		assert.NotNil(t, cloneResp, "CloneVM should return a response")
-		assert.NotEmpty(t, cloneResp.TaskID, "CloneVM should return a task ID")
+		require.NoError(t, err, "CloneVM should not return an error")
+		require.NotNil(t, cloneResp, "CloneVM should return a response")
+		require.NotEmpty(t, cloneResp.TaskID, "CloneVM should return a task ID")
 
 		t.Logf("Clone task started with task ID: %s", cloneResp.TaskID)
 
 		// Wait for clone operation to complete (can take a while)
 		cloneStatus, err := cli.WaitForTask(cloneResp.TaskID, 5*time.Minute)
-		assert.NoError(t, err, "WaitForTask for clone should not return an error")
-		assert.Equal(t, "OK", cloneStatus.ExitStatus, "Clone task should complete with OK status")
-		assert.Equal(t, "stopped", cloneStatus.Status, "Clone task status should be stopped")
+		require.NoError(t, err, "WaitForTask for clone should not return an error")
+		require.Equal(t, "OK", cloneStatus.ExitStatus, "Clone task should complete with OK status")
+		require.Equal(t, "stopped", cloneStatus.Status, "Clone task status should be stopped")
 
 		t.Logf("Clone operation completed successfully")
 
@@ -83,7 +83,7 @@ func TestVMIntegration(t *testing.T) {
 
 		// Generate cloud-init file
 		cloudInitContent, err := GenerateCloudInit(CloudInitTestTempl, cloudInitParams)
-		assert.NoError(t, err, "GenerateCloudInitFile should not return an error")
+		require.NoError(t, err, "GenerateCloudInitFile should not return an error")
 
 		// Upload cloud-init file via SCP
 		cloudInitFileName := fmt.Sprintf("kube-agent-ci-%s.yml", vmName)
@@ -91,7 +91,7 @@ func TestVMIntegration(t *testing.T) {
 
 		// Upload the cloud-init file to the Proxmox server
 		err = ssh.CopyFile(scpOpts, []byte(cloudInitContent), cloudInitFilePath)
-		assert.NoError(t, err, "Uploading cloud-init file via SCP should not return an error")
+		require.NoError(t, err, "Uploading cloud-init file via SCP should not return an error")
 
 		t.Logf("Cloud-init configuration uploaded successfully")
 
@@ -99,56 +99,56 @@ func TestVMIntegration(t *testing.T) {
 		t.Logf("Configuring VM with 2 cores, 2048MB memory, and cloud-init")
 		cloudInitConfig := fmt.Sprintf("user=local:snippets/%s", cloudInitFileName)
 		configResp, err := cli.ConfigureVM(testVMID, 2, 2048, cloudInitConfig)
-		assert.NoError(t, err, "ConfigureVM should not return an error")
-		assert.NotNil(t, configResp, "ConfigureVM should return a response")
-		assert.NotEmpty(t, configResp.TaskID, "ConfigureVM should return a task ID")
+		require.NoError(t, err, "ConfigureVM should not return an error")
+		require.NotNil(t, configResp, "ConfigureVM should return a response")
+		require.NotEmpty(t, configResp.TaskID, "ConfigureVM should return a task ID")
 
 		// Wait for configure operation to complete
 		configStatus, err := cli.WaitForTask(configResp.TaskID, 1*time.Minute)
-		assert.NoError(t, err, "WaitForTask for config should not return an error")
-		assert.Equal(t, "OK", configStatus.ExitStatus, "Config task should complete with OK status")
+		require.NoError(t, err, "WaitForTask for config should not return an error")
+		require.Equal(t, "OK", configStatus.ExitStatus, "Config task should complete with OK status")
 
 		t.Logf("Configure operation completed successfully")
 
 		// 4. Start the VM
 		t.Logf("Starting VM %d", testVMID)
 		startResp, err := cli.StartVM(testVMID)
-		assert.NoError(t, err, "StartVM should not return an error")
-		assert.NotNil(t, startResp, "StartVM should return a response")
-		assert.NotEmpty(t, startResp.TaskID, "StartVM should return a task ID")
+		require.NoError(t, err, "StartVM should not return an error")
+		require.NotNil(t, startResp, "StartVM should return a response")
+		require.NotEmpty(t, startResp.TaskID, "StartVM should return a task ID")
 
 		// Wait for start operation to complete
 		startStatus, err := cli.WaitForTask(startResp.TaskID, 3*time.Minute)
-		assert.NoError(t, err, "WaitForTask for start should not return an error")
-		assert.Equal(t, "OK", startStatus.ExitStatus, "Start task should complete with OK status")
+		require.NoError(t, err, "WaitForTask for start should not return an error")
+		require.Equal(t, "OK", startStatus.ExitStatus, "Start task should complete with OK status")
 
 		t.Logf("VM started successfully")
 
 		// 5. Stop the VM
 		t.Logf("Stopping VM %d", testVMID)
 		stopResp, err := cli.StopVM(testVMID)
-		assert.NoError(t, err, "StopVM should not return an error")
-		assert.NotNil(t, stopResp, "StopVM should return a response")
-		assert.NotEmpty(t, stopResp.TaskID, "StopVM should return a task ID")
+		require.NoError(t, err, "StopVM should not return an error")
+		require.NotNil(t, stopResp, "StopVM should return a response")
+		require.NotEmpty(t, stopResp.TaskID, "StopVM should return a task ID")
 
 		// Wait for stop operation to complete
 		stopStatus, err := cli.WaitForTask(stopResp.TaskID, 2*time.Minute)
-		assert.NoError(t, err, "WaitForTask for stop should not return an error")
-		assert.Equal(t, "OK", stopStatus.ExitStatus, "Stop task should complete with OK status")
+		require.NoError(t, err, "WaitForTask for stop should not return an error")
+		require.Equal(t, "OK", stopStatus.ExitStatus, "Stop task should complete with OK status")
 
 		t.Logf("VM stopped successfully")
 
 		// 6. Delete the VM
 		t.Logf("Deleting VM %d", testVMID)
 		deleteResp, err := cli.DeleteVM(testVMID)
-		assert.NoError(t, err, "DeleteVM should not return an error")
-		assert.NotNil(t, deleteResp, "DeleteVM should return a response")
-		assert.NotEmpty(t, deleteResp.TaskID, "DeleteVM should return a task ID")
+		require.NoError(t, err, "DeleteVM should not return an error")
+		require.NotNil(t, deleteResp, "DeleteVM should return a response")
+		require.NotEmpty(t, deleteResp.TaskID, "DeleteVM should return a task ID")
 
 		// Wait for delete operation to complete
 		deleteStatus, err := cli.WaitForTask(deleteResp.TaskID, 2*time.Minute)
-		assert.NoError(t, err, "WaitForTask for delete should not return an error")
-		assert.Equal(t, "OK", deleteStatus.ExitStatus, "Delete task should complete with OK status")
+		require.NoError(t, err, "WaitForTask for delete should not return an error")
+		require.Equal(t, "OK", deleteStatus.ExitStatus, "Delete task should complete with OK status")
 
 		t.Logf("VM deleted successfully")
 
@@ -177,8 +177,8 @@ func TestVMIntegration(t *testing.T) {
 		cloneResp, err := cli.CloneVM(nonExistentTemplateID, testVMID, vmName)
 
 		// Should return an error
-		assert.Error(t, err, "CloneVM with non-existent template should return an error")
-		assert.Nil(t, cloneResp, "CloneVM with non-existent template should return nil response")
+		require.Error(t, err, "CloneVM with non-existent template should return an error")
+		require.Nil(t, cloneResp, "CloneVM with non-existent template should return nil response")
 
 		t.Logf("Correctly failed to clone non-existent template with error: %v", err)
 	})
