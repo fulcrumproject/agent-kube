@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"fulcrumproject.org/kube-agent/internal/config"
+	"fulcrumproject.org/kube-agent/internal/helpers"
 	"fulcrumproject.org/kube-agent/internal/httpcli"
 	"fulcrumproject.org/kube-agent/internal/ssh"
 	"github.com/stretchr/testify/require"
@@ -21,6 +22,9 @@ func generateTestVMID() int {
 // This test requires a valid .env file with Proxmox credentials
 // It will only run if the INTEGRATION_TEST environment variable is set to true
 func TestVMIntegration(t *testing.T) {
+	// Skip if not an integration test
+	helpers.SkipIfNotIntegrationTest(t)
+
 	cfg, err := config.Builder().WithEnv("../..").Build()
 	require.NoError(t, err)
 

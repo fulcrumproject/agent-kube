@@ -486,6 +486,7 @@ func createBootstrapTokenSecret(clientset kubernetes.Interface, tokenID, tokenSe
 			"expiration":                     []byte(expiration.Format(time.RFC3339)),
 			"usage-bootstrap-authentication": []byte("true"),
 			"usage-bootstrap-signing":        []byte("true"),
+			"auth-extra-groups":              []byte("system:bootstrappers:kubeadm:default-node-token"),
 		},
 	}
 

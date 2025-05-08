@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"fulcrumproject.org/kube-agent/internal/config"
+	"fulcrumproject.org/kube-agent/internal/helpers"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,7 +16,7 @@ import (
 // It will only run if the INTEGRATION_TEST environment variable is set to true
 func TestKamajiClientIntegration(t *testing.T) {
 	// Skip if not an integration test
-	// helpers.SkipIfNotIntegrationTest(t)
+	helpers.SkipIfNotIntegrationTest(t)
 
 	// Load configuration from .env file
 	cfg, err := config.Builder().WithEnv("../..").Build()

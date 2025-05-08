@@ -26,9 +26,6 @@ type ProxmoxClient interface {
 
 	// GetTaskStatus retrieves the current status of a task
 	GetTaskStatus(taskID string) (*TaskStatus, error)
-
-	// UploadCloudInit uploads a cloud-init configuration file to Proxmox storage
-	UploadCloudInit(fileName string, content string) (*TaskResponse, error)
 }
 
 // TaskResponse represents a Proxmox API response containing a task ID

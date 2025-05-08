@@ -88,32 +88,6 @@ func (c *HTTPProxmoxClient) DeleteVM(vmID int) (*agent.TaskResponse, error) {
 	return taskResponse(resp)
 }
 
-// UploadCloudInit uploads a cloud-init configuration file to Proxmox storage
-func (c *HTTPProxmoxClient) UploadCloudInit(nodeName, storageName, fileName string, content string) (*agent.TaskResponse, error) {
-	// Prepare the endpoint for file upload
-	endpoint := fmt.Sprintf("/api2/json/nodes/%s/storage/%s/upload", nodeName, storageName)
-
-	// Create multipart form data
-	values := map[string]string{
-		"content":  content,
-		"filename": fmt.Sprintf("snippets/%s", fileName),
-	}
-
-	body, contentType, err := c.httpClient.CreateMultipartForm(values)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create multipart form: %w", err)
-	}
-
-	// Upload the file
-	resp, err := c.httpClient.PostMultipart(endpoint, contentType, body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	return taskResponse(resp)
-}
-
 // GetTaskStatus retrieves the current status of a task
 func (c *HTTPProxmoxClient) GetTaskStatus(taskID string) (*agent.TaskStatus, error) {
 	// Parse the UPID to extract components needed for the API call
