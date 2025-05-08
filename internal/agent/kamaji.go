@@ -40,6 +40,15 @@ type JoinTokenResponse struct {
 	ExpirationTime time.Time
 }
 
+// NodeStatus represents the status of a Kubernetes node
+type NodeStatus struct {
+	Name           string
+	Ready          bool
+	KubeletVersion string
+	Addresses      map[string]string
+	CreatedAt      time.Time
+}
+
 // KamajiTenantClient defines the interface for interacting with Kamaji API
 type KamajiTenantClient interface {
 
@@ -48,6 +57,9 @@ type KamajiTenantClient interface {
 
 	// DeleteWorkerNode deletes a worker node
 	DeleteWorkerNode(ctx context.Context, nodeName string) error
+
+	// GetNodeStatus retrieves the status of a node in the tenant cluster
+	GetNodeStatus(ctx context.Context, nodeName string) (*NodeStatus, error)
 
 	// CreateCalicoResources applies Calico networking resources to the tenant cluster
 	CreateCalicoResources(ctx context.Context) error

@@ -509,6 +509,39 @@ func (t *TenantClient) DeleteWorkerNode(ctx context.Context, nodeName string) er
 	return nil
 }
 
+// GetNodeStatus retrieves the status of a node in the tenant cluster
+func (t *TenantClient) GetNodeStatus(ctx context.Context, nodeName string) (*agent.NodeStatus, error) {
+	// Get the node from the Kubernetes API
+	node, err := t.tenantClient.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get node %s: %w", nodeName, err)
+	}
+
+	// Check if the node is ready
+	isReady := false
+	for _, condition := range node.Status.Conditions {
+		if condition.Type == "Ready" {
+			isReady = condition.Status == "True"
+			break
+		}
+	}
+
+	// Create a map of node addresses
+	addresses := make(map[string]string)
+	for _, addr := range node.Status.Addresses {
+		addresses[string(addr.Type)] = addr.Address
+	}
+
+	// Return the node status
+	return &agent.NodeStatus{
+		Name:           node.Name,
+		Ready:          isReady,
+		KubeletVersion: node.Status.NodeInfo.KubeletVersion,
+		Addresses:      addresses,
+		CreatedAt:      node.CreationTimestamp.Time,
+	}, nil
+}
+
 func (t *TenantClient) CreateCalicoResources(ctx context.Context) error {
 	return t.createResources(ctx, calicoYamlContent)
 }

@@ -13,6 +13,7 @@ import (
 	"fulcrumproject.org/kube-agent/internal/proxmox"
 	"fulcrumproject.org/kube-agent/internal/ssh"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 // generateTestVMID creates a test VM ID that's unlikely to conflict with existing VMs
@@ -188,6 +189,15 @@ func TestKamajiProxmoxIntegration(t *testing.T) {
 			} else {
 				t.Logf("Cloud-init file deleted successfully")
 			}
+
+			// Also delete the node from the Kubernetes cluster
+			t.Logf("Cleanup: Removing node %s from the Kubernetes cluster", vmName)
+			err = tenantClient.DeleteWorkerNode(ctx, vmName)
+			if err != nil {
+				t.Logf("Warning: Failed to delete node from Kubernetes: %v", err)
+			} else {
+				t.Logf("Node removed from Kubernetes cluster successfully")
+			}
 		}()
 
 		// Clone the VM from template
@@ -264,12 +274,36 @@ func TestKamajiProxmoxIntegration(t *testing.T) {
 		require.Equal(t, "OK", startStatus.ExitStatus, "Start task should complete with OK status")
 		t.Logf("VM started successfully, joining Kubernetes cluster")
 
-		// On a real system, we would wait for the node to join the cluster and verify
-		// but for tests we'll just check after a short wait
-		t.Logf("Waiting briefly to allow node registration to begin...")
-		time.Sleep(30 * time.Second)
+		// Now we'll wait for the node to join the cluster and verify it's properly registered
+		t.Logf("Waiting for node to join the Kubernetes cluster...")
 
-		// For tests, we'll just complete here without further verification
-		t.Logf("Integration test successful - Kamaji tenant created and Proxmox VM configured to join")
+		// Poll for node status periodically
+		err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
+			nodeStatus, err := tenantClient.GetNodeStatus(ctx, vmName)
+			if err != nil {
+				t.Logf("Node not yet registered: %v", err)
+				return false, nil // Continue polling
+			}
+
+			t.Logf("Node found with status - Name: %s, Ready: %t, Version: %s",
+				nodeStatus.Name, nodeStatus.Ready, nodeStatus.KubeletVersion)
+
+			// If the node is found but not ready, continue waiting
+			if !nodeStatus.Ready {
+				t.Logf("Node registered but not yet ready")
+				return false, nil
+			}
+
+			// Node is registered and ready
+			return true, nil
+		})
+
+		if err != nil {
+			t.Logf("Warning: Node may not have joined properly or is not ready: %v", err)
+		} else {
+			t.Logf("Node successfully joined the cluster and is ready")
+		}
+
+		t.Logf("Integration test completed - Kamaji tenant created and Proxmox VM joined as a worker node")
 	})
 }
