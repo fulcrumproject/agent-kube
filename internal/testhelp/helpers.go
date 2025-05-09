@@ -1,4 +1,4 @@
-package helpers
+package testhelp
 
 import (
 	"os"

@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"fulcrumproject.org/kube-agent/internal/config"
-	"fulcrumproject.org/kube-agent/internal/helpers"
 	"fulcrumproject.org/kube-agent/internal/httpcli"
 	"fulcrumproject.org/kube-agent/internal/ssh"
+	"fulcrumproject.org/kube-agent/internal/testhelp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,7 +23,7 @@ func generateTestVMID() int {
 // It will only run if the INTEGRATION_TEST environment variable is set to true
 func TestVMIntegration(t *testing.T) {
 	// Skip if not an integration test
-	helpers.SkipIfNotIntegrationTest(t)
+	testhelp.SkipIfNotIntegrationTest(t)
 
 	cfg, err := config.Builder().WithEnv("../..").Build()
 	require.NoError(t, err)

@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"fulcrumproject.org/kube-agent/internal/config"
-	"fulcrumproject.org/kube-agent/internal/helpers"
 	"fulcrumproject.org/kube-agent/internal/httpcli"
 	"fulcrumproject.org/kube-agent/internal/kamaji"
 	"fulcrumproject.org/kube-agent/internal/proxmox"
 	"fulcrumproject.org/kube-agent/internal/ssh"
+	"fulcrumproject.org/kube-agent/internal/testhelp"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
@@ -28,7 +28,7 @@ func generateTestVMID() int {
 // 3. Creating a VM in Proxmox configured to join the Kubernetes tenant
 func TestKamajiProxmoxIntegration(t *testing.T) {
 	// Skip if not an integration test
-	helpers.SkipIfNotIntegrationTest(t)
+	testhelp.SkipIfNotIntegrationTest(t)
 
 	// Load configuration from .env file
 	cfg, err := config.Builder().WithEnv("../..").Build()

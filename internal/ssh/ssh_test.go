@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"fulcrumproject.org/kube-agent/internal/config"
-	"fulcrumproject.org/kube-agent/internal/helpers"
+	"fulcrumproject.org/kube-agent/internal/testhelp"
 )
 
 // TestCopyFile tests the CopyFile function with options from .env config
@@ -15,7 +15,7 @@ import (
 // It will only run if the INTEGRATION_TEST environment variable is set to true
 func TestCopyFile(t *testing.T) {
 	// Skip if not an integration test
-	helpers.SkipIfNotIntegrationTest(t)
+	testhelp.SkipIfNotIntegrationTest(t)
 
 	// Load configuration from .env
 	cfg, err := config.Builder().WithEnv("../..").Build()
