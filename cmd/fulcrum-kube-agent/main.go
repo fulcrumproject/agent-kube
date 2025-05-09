@@ -13,6 +13,9 @@ import (
 	"fulcrumproject.org/kube-agent/internal/config"
 	"fulcrumproject.org/kube-agent/internal/fulcrum"
 	"fulcrumproject.org/kube-agent/internal/httpcli"
+	"fulcrumproject.org/kube-agent/internal/kamaji"
+	"fulcrumproject.org/kube-agent/internal/proxmox"
+	"fulcrumproject.org/kube-agent/internal/ssh"
 )
 
 func main() {
@@ -27,11 +30,36 @@ func main() {
 
 	log.Println("Starting agent ...")
 
-	// Clients
+	// Initialize all clients
+	// Fulcrum client for communicating with the Fulcrum Core API
 	fulcrumCli := fulcrum.NewFulcrumClient(cfg.FulcrumAPIURL, cfg.AgentToken, httpcli.WithSkipTLSVerify(cfg.SkipTLSVerify))
 
-	// Create and start the agent
-	testAgent, err := agent.New(fulcrumCli)
+	// Proxmox client for VM management
+	proxmoxHttpClient := httpcli.NewHTTPClient(cfg.ProxmoxAPIURL, cfg.ProxmoxAPIToken, httpcli.WithSkipTLSVerify(cfg.SkipTLSVerify))
+	proxmoxCli := proxmox.NewProxmoxClient(cfg.ProxmoxHost, cfg.ProxmoxStorage, proxmoxHttpClient)
+
+	// Kamaji client for Kubernetes tenant control planes
+	kamajiCli, err := kamaji.NewClient(cfg.KubeAPIURL, cfg.KubeAPIToken)
+	if err != nil {
+		log.Fatalf("Failed to create Kamaji client: %v", err)
+	}
+
+	// SSH client for SCP operations (Cloud-Init templates)
+	sshOpts := ssh.Options{
+		Host:           cfg.ProxmoxCIHost,
+		Username:       cfg.ProxmoxCIUser,
+		PrivateKeyPath: cfg.ProxmoxCIPKPath,
+		Timeout:        30 * time.Second,
+	}
+
+	sshCli, err := ssh.NewClient(sshOpts)
+	if err != nil {
+		log.Fatalf("Failed to create SSH client: %v", err)
+	}
+	defer sshCli.Close()
+
+	// Create and start the agent with all required clients
+	testAgent, err := agent.New(fulcrumCli, proxmoxCli, kamajiCli, sshCli)
 	if err != nil {
 		log.Fatalf("Failed to create agent: %v", err)
 	}

@@ -13,7 +13,7 @@ import (
 // Agent is the main agent implementation
 type Agent struct {
 	cfg        *config.Config
-	client     FulcrumClient
+	fulcrumCli FulcrumClient
 	jobHandler *JobHandler
 	stopCh     chan struct{}
 	wg         sync.WaitGroup
@@ -24,12 +24,20 @@ type Agent struct {
 
 // New creates a new agent
 func New(
-	client FulcrumClient,
+	fulcrumCli FulcrumClient,
+	proxmoxCli ProxmoxClient,
+	kamajiCli KamajiClient,
+	sshCli SSHClient,
 ) (*Agent, error) {
-	jobHandler := NewJobHandler(client)
+	jobHandler := NewJobHandler(
+		fulcrumCli,
+		proxmoxCli,
+		kamajiCli,
+		sshCli,
+	)
 
 	return &Agent{
-		client:     client,
+		fulcrumCli: fulcrumCli,
 		jobHandler: jobHandler,
 		stopCh:     make(chan struct{}),
 		connected:  false,
@@ -41,7 +49,7 @@ func (a *Agent) Start(ctx context.Context) error {
 	a.startTime = time.Now()
 
 	// Get agent information to verify the token is valid
-	agentInfo, err := a.client.GetAgentInfo()
+	agentInfo, err := a.fulcrumCli.GetAgentInfo()
 	if err != nil {
 		return fmt.Errorf("failed to get agent information: %w", err)
 	}
@@ -56,7 +64,7 @@ func (a *Agent) Start(ctx context.Context) error {
 	log.Printf("Agent authenticated with ID: %s", id)
 
 	// Update agent status to Connected
-	if err := a.client.UpdateAgentStatus("Connected"); err != nil {
+	if err := a.fulcrumCli.UpdateAgentStatus("Connected"); err != nil {
 		return fmt.Errorf("failed to update agent status: %w", err)
 	}
 	a.connected = true
@@ -88,7 +96,7 @@ func (a *Agent) heartbeat(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			if err := a.client.UpdateAgentStatus("Connected"); err != nil {
+			if err := a.fulcrumCli.UpdateAgentStatus("Connected"); err != nil {
 				log.Printf("Failed to update agent status: %v", err)
 			} else {
 				log.Printf("Heartbeat: Agent status updated")
@@ -167,7 +175,7 @@ func (a *Agent) Shutdown(ctx context.Context) error {
 
 	// Update agent status to Disconnected
 	if a.connected {
-		if err := a.client.UpdateAgentStatus("Disconnected"); err != nil {
+		if err := a.fulcrumCli.UpdateAgentStatus("Disconnected"); err != nil {
 			return fmt.Errorf("failed to update agent status on shutdown: %w", err)
 		}
 		a.connected = false
