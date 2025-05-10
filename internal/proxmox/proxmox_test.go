@@ -129,10 +129,10 @@ func TestVMIntegration(t *testing.T) {
 		t.Logf("VM started successfully")
 
 		// Check VM status when running
-		vmStatus, err := cli.GetVMStatus(testVMID)
-		require.NoError(t, err, "GetVMStatus should not return an error when VM is running")
-		require.NotNil(t, vmStatus, "GetVMStatus should return a status object")
-		require.Equal(t, "running", vmStatus.Status, "VM status should be 'running'")
+		vmStatus, err := cli.GetVMInfo(testVMID)
+		require.NoError(t, err, "GetVMInfo should not return an error when VM is running")
+		require.NotNil(t, vmStatus, "GetVMInfo should return a status object")
+		require.Equal(t, "running", vmStatus.State, "VM status should be 'running'")
 		require.Equal(t, vmName, vmStatus.Name, "VM name should match")
 		require.Equal(t, testVMID, vmStatus.VMID, "VM ID should match")
 		require.Greater(t, vmStatus.Memory, int64(0), "Running VM should have non-zero memory usage")
@@ -155,10 +155,10 @@ func TestVMIntegration(t *testing.T) {
 		t.Logf("VM stopped successfully")
 
 		// Check VM status when stopped
-		vmStatusStopped, err := cli.GetVMStatus(testVMID)
-		require.NoError(t, err, "GetVMStatus should not return an error when VM is stopped")
-		require.NotNil(t, vmStatusStopped, "GetVMStatus should return a status object")
-		require.Equal(t, "stopped", vmStatusStopped.Status, "VM status should be 'stopped'")
+		vmStatusStopped, err := cli.GetVMInfo(testVMID)
+		require.NoError(t, err, "GetVMInfo should not return an error when VM is stopped")
+		require.NotNil(t, vmStatusStopped, "GetVMInfo should return a status object")
+		require.Equal(t, "stopped", vmStatusStopped.State, "VM status should be 'stopped'")
 		require.Equal(t, vmName, vmStatusStopped.Name, "VM name should match")
 		require.Equal(t, testVMID, vmStatusStopped.VMID, "VM ID should match")
 		require.Equal(t, float64(0), vmStatusStopped.CPU, "Stopped VM should have zero CPU usage")
@@ -181,9 +181,9 @@ func TestVMIntegration(t *testing.T) {
 		t.Logf("VM deleted successfully")
 
 		// Check VM status after deletion - should return an error
-		vmStatusDeleted, err := cli.GetVMStatus(testVMID)
-		require.Error(t, err, "GetVMStatus should return an error when VM doesn't exist")
-		require.Nil(t, vmStatusDeleted, "GetVMStatus should return nil for a deleted VM")
+		vmStatusDeleted, err := cli.GetVMInfo(testVMID)
+		require.Error(t, err, "GetVMInfo should return an error when VM doesn't exist")
+		require.Nil(t, vmStatusDeleted, "GetVMInfo should return nil for a deleted VM")
 		t.Logf("VM status check after deletion correctly returned error: %v", err)
 
 		// Cleanup CI file

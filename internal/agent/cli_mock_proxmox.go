@@ -10,7 +10,7 @@ import (
 type VM struct {
 	ID        int
 	Name      string
-	Status    string // "running", "stopped"
+	State     VMState
 	Cores     int
 	Memory    int
 	CloudInit string
@@ -48,14 +48,14 @@ func NewMockProxmoxClient(nodeName string) *MockProxmoxClient {
 }
 
 // AddVM adds a VM to the stub client's state
-func (c *MockProxmoxClient) AddVM(id int, name string, status string, cores int, memory int) *VM {
+func (c *MockProxmoxClient) AddVM(id int, name string, state VMState, cores int, memory int) *VM {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	vm := &VM{
 		ID:     id,
 		Name:   name,
-		Status: status,
+		State:  state,
 		Cores:  cores,
 		Memory: memory,
 	}
@@ -121,7 +121,7 @@ func (c *MockProxmoxClient) CloneVM(_ int, newVMID int, name string) (*TaskRespo
 	c.vms[newVMID] = &VM{
 		ID:     newVMID,
 		Name:   name,
-		Status: "stopped",
+		State:  "stopped",
 		Cores:  2,
 		Memory: 2048,
 	}
@@ -161,12 +161,12 @@ func (c *MockProxmoxClient) StartVM(vmID int) (*TaskResponse, error) {
 		return nil, fmt.Errorf("VM with ID %d not found", vmID)
 	}
 
-	if vm.Status == "running" {
+	if vm.State == "running" {
 		return nil, fmt.Errorf("VM with ID %d is already running", vmID)
 	}
 
 	// Start the VM synchronously
-	vm.Status = "running"
+	vm.State = "running"
 
 	// Create a completed task
 	return c.createTask("qmstart", vmID, "OK"), nil
@@ -182,12 +182,12 @@ func (c *MockProxmoxClient) StopVM(vmID int) (*TaskResponse, error) {
 		return nil, fmt.Errorf("VM with ID %d not found", vmID)
 	}
 
-	if vm.Status == "stopped" {
+	if vm.State == "stopped" {
 		return nil, fmt.Errorf("VM with ID %d is already stopped", vmID)
 	}
 
 	// Stop the VM synchronously
-	vm.Status = "stopped"
+	vm.State = "stopped"
 
 	// Create a completed task
 	return c.createTask("qmstop", vmID, "OK"), nil
@@ -239,8 +239,8 @@ func (c *MockProxmoxClient) WaitForTask(taskID string, timeout time.Duration) (*
 	return c.GetTaskStatus(taskID)
 }
 
-// GetVMStatus retrieves the current status of a virtual machine
-func (c *MockProxmoxClient) GetVMStatus(vmID int) (*VMStatus, error) {
+// GetVMInfo retrieves the current status of a virtual machine
+func (c *MockProxmoxClient) GetVMInfo(vmID int) (*VMInfo, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -250,9 +250,9 @@ func (c *MockProxmoxClient) GetVMStatus(vmID int) (*VMStatus, error) {
 	}
 
 	// Mock VM status with reasonable defaults
-	status := &VMStatus{
+	status := &VMInfo{
 		Name:      vm.Name,
-		Status:    vm.Status,
+		State:     vm.State,
 		VMID:      vm.ID,
 		NodeName:  c.nodeName,
 		CPU:       0.0, // 0% CPU usage when not running
@@ -262,11 +262,11 @@ func (c *MockProxmoxClient) GetVMStatus(vmID int) (*VMStatus, error) {
 		Disk:      1024 * 1024 * 1024,             // 1GB disk usage (mock value)
 		MaxDisk:   10 * 1024 * 1024 * 1024,        // 10GB max disk (mock value)
 		Uptime:    0,                              // No uptime when not running
-		QMPStatus: vm.Status,
+		QMPStatus: "unknown",                      // QMP status (mock value)
 	}
 
 	// If VM is running, simulate some resource usage
-	if vm.Status == "running" {
+	if vm.State == "running" {
 		status.CPU = 0.05                    // 5% CPU usage
 		status.Memory = status.MaxMemory / 4 // Using 25% of allocated memory
 		status.Uptime = 3600                 // 1 hour uptime (mock value)

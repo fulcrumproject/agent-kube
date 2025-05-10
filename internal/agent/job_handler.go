@@ -213,10 +213,10 @@ func (h *JobHandler) handleServiceUpdate(job *Job, startStop bool) (*JobResponse
 	var nodesToStart []Node
 	var nodesToStop []Node
 	for _, targetNode := range targetNodes {
-		if currentNode, exists := currentNodesMap[targetNode.ID]; !exists {
+		if _, exists := currentNodesMap[targetNode.ID]; !exists {
 			nodesToAdd = append(nodesToAdd, targetNode)
 		} else {
-			if startStop && currentNode.State != targetNode.State {
+			if startStop {
 				if targetNode.State == NodeStateOn {
 					nodesToStart = append(nodesToStart, targetNode)
 				} else {
@@ -247,11 +247,7 @@ func (h *JobHandler) handleServiceUpdate(job *Job, startStop bool) (*JobResponse
 		}
 		resp.Resources.Nodes[targetNode.ID] = vmID
 		if startStop && targetNode.State == NodeStateOn {
-			// Start the VM if it should be in "On" state
-			err := h.startVM(vmID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to start node %s: %w", targetNode.ID, err)
-			}
+			nodesToStart = append(nodesToStart, targetNode)
 		}
 	}
 
@@ -417,6 +413,16 @@ func (h *JobHandler) createVM(_ context.Context, serviceName string, node Node) 
 
 // startVM starts a node
 func (h *JobHandler) startVM(vmID int) error {
+	i, err := h.proxmoxCli.GetVMInfo(vmID)
+	if err != nil {
+		return fmt.Errorf("failed to get VM info: %w", err)
+	}
+	if i.State == VMStateRunning {
+		return nil
+	} else if i.State != VMStateStopped {
+		return fmt.Errorf("VM is not stopped")
+	}
+
 	t, err := h.proxmoxCli.StartVM(vmID)
 	if err != nil {
 		return fmt.Errorf("failed to start VM: %w", err)
@@ -432,6 +438,16 @@ func (h *JobHandler) startVM(vmID int) error {
 
 // stopVM stops a node
 func (h *JobHandler) stopVM(vmID int) error {
+	i, err := h.proxmoxCli.GetVMInfo(vmID)
+	if err != nil {
+		return fmt.Errorf("failed to get VM info: %w", err)
+	}
+	if i.State == VMStateStopped {
+		return nil
+	} else if i.State != VMStateRunning {
+		return fmt.Errorf("VM is not running")
+	}
+
 	t, err := h.proxmoxCli.StopVM(vmID)
 	if err != nil {
 		return fmt.Errorf("failed to stop VM: %w", err)

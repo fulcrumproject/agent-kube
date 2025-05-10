@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -129,9 +128,8 @@ func loadEnvFromAncestors() error {
 			envPath := filepath.Join(dir, fileName)
 			if _, err := os.Stat(envPath); err == nil {
 				// File exists, load it
-				slog.Info("Loading .env file", "file", envPath)
 				if err := godotenv.Load(envPath); err == nil {
-					log.Printf("Loaded %s from %s", fileName, dir)
+					slog.Info("Loading .env file", "file", envPath)
 					found = true
 				}
 			}

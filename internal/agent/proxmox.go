@@ -27,8 +27,8 @@ type ProxmoxClient interface {
 	// GetTaskStatus retrieves the current status of a task
 	GetTaskStatus(taskID string) (*TaskStatus, error)
 
-	// GetVMStatus retrieves the current status of a virtual machine
-	GetVMStatus(vmID int) (*VMStatus, error)
+	// GetVMInfo retrieves the current status of a virtual machine
+	GetVMInfo(vmID int) (*VMInfo, error)
 }
 
 // TaskResponse represents a Proxmox API response containing a task ID
@@ -56,10 +56,20 @@ type TaskStatus struct {
 	UpID       string `json:"upid"`       // Full UPID of the task
 }
 
-// VMStatus represents the status of a Proxmox virtual machine
-type VMStatus struct {
+type VMState string
+
+const (
+	VMStateRunning VMState = "running"
+	VMStateStopped VMState = "stopped"
+	VMStatePaused  VMState = "paused"
+	VMStateError   VMState = "error"
+	VMStateUnknown VMState = "unknown"
+)
+
+// VMInfo represents the status of a Proxmox virtual machine
+type VMInfo struct {
 	Name      string  `json:"name"`      // VM name
-	Status    string  `json:"status"`    // Such as 'running' or 'stopped'
+	State     VMState `json:"status"`    // Such as 'running' or 'stopped'
 	VMID      int     `json:"vmid"`      // VM ID
 	NodeName  string  `json:"node"`      // Node name where the VM is running
 	CPU       float64 `json:"cpu"`       // Current CPU usage (0-1 range)
