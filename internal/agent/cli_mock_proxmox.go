@@ -109,19 +109,11 @@ func (c *MockProxmoxClient) createTask(taskType string, vmID int, exitStatus str
 }
 
 // CloneVM creates a new VM by cloning from a template
-func (c *MockProxmoxClient) CloneVM(templateID int, newVMID int, name string) (*TaskResponse, error) {
+func (c *MockProxmoxClient) CloneVM(_ int, newVMID int, name string) (*TaskResponse, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	template, templateExists := c.vms[templateID]
-
-	if !templateExists {
-		return nil, fmt.Errorf("template VM with ID %d not found", templateID)
-	}
-
-	_, newVMExists := c.vms[newVMID]
-
-	if newVMExists {
+	if _, newVMExists := c.vms[newVMID]; newVMExists {
 		return nil, fmt.Errorf("VM with ID %d already exists", newVMID)
 	}
 
@@ -130,8 +122,8 @@ func (c *MockProxmoxClient) CloneVM(templateID int, newVMID int, name string) (*
 		ID:     newVMID,
 		Name:   name,
 		Status: "stopped",
-		Cores:  template.Cores,
-		Memory: template.Memory,
+		Cores:  2,
+		Memory: 2048,
 	}
 
 	// Create a completed task

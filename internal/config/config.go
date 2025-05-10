@@ -4,19 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
 	"time"
-
-	"github.com/joho/godotenv"
 )
 
 // Config holds the configuration for the agent
 type Config struct {
-	// Agent authentication
-	AgentToken string `json:"agentToken" env:"TOKEN"` // Authentication token for the agent
-
 	// Fulcrum Core API connection
-	FulcrumAPIURL string `json:"fulcrumApiUrl" env:"API_URL"`
+	FulcrumAPIURL   string `json:"fulcrumApiUrl" env:"API_URL"`
+	FulcrumAPIToken string `json:"fulcrumApiToken" env:"API_TOKEN"`
 
 	// Polling intervals
 	JobPollInterval      time.Duration `json:"jobPollInterval" env:"JOB_POLL_INTERVAL"`           // How often to poll for jobs
@@ -45,7 +40,7 @@ type Config struct {
 
 // Validate checks if the configuration is valid
 func (c *Config) Validate() error {
-	if c.AgentToken == "" {
+	if c.FulcrumAPIToken == "" {
 		return fmt.Errorf("agent token is required")
 	}
 	if c.FulcrumAPIURL == "" {
@@ -90,7 +85,7 @@ type ConfigBuilder struct {
 func Builder() *ConfigBuilder {
 	return &ConfigBuilder{
 		config: &Config{
-			AgentToken:           "", // Must be provided
+			FulcrumAPIToken:      "", // Must be provided
 			FulcrumAPIURL:        "http://localhost:3000",
 			SkipTLSVerify:        false, // By default, verify TLS certificates
 			JobPollInterval:      5 * time.Second,
@@ -124,16 +119,20 @@ func (b *ConfigBuilder) LoadFile(filepath *string) *ConfigBuilder {
 }
 
 // WithEnv overrides configuration from environment variables
-func (b *ConfigBuilder) WithEnv(dirpath string) *ConfigBuilder {
+func (b *ConfigBuilder) WithEnv() *ConfigBuilder {
 	if b.err != nil {
 		return b
 	}
 
-	_ = godotenv.Load(path.Join(dirpath, ".env.local"))
-	_ = godotenv.Load(path.Join(dirpath, ".env"))
+	err := loadEnvFromAncestors()
+	if err != nil {
+		b.err = fmt.Errorf("failed to load environment variables: %w", err)
+		return b
+	}
 
-	if err := LoadEnvToStruct(b.config, "FULCRUM_AGENT_", "env"); err != nil {
+	if err := loadEnvToStruct(b.config, "FULCRUM_AGENT_", "env"); err != nil {
 		b.err = fmt.Errorf("failed to override configuration from environment: %w", err)
+		return b
 	}
 
 	return b

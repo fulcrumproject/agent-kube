@@ -24,7 +24,7 @@ func main() {
 	useMock := flag.Bool("mock", false, "Use mock implementations of clients")
 	flag.Parse()
 
-	cfg, err := config.Builder().LoadFile(configPath).WithEnv(".").Build()
+	cfg, err := config.Builder().LoadFile(configPath).WithEnv().Build()
 	if err != nil {
 		log.Fatalf("Invalid configuration: %v", err)
 	}
@@ -35,7 +35,7 @@ func main() {
 	var clients *agent.Clients
 	if *useMock {
 		log.Println("Using mock clients...")
-		clients = initMockClients()
+		clients = initMockClients(cfg)
 	} else {
 		clients = initRealClients(cfg)
 	}
@@ -80,9 +80,8 @@ func main() {
 }
 
 func initRealClients(cfg *config.Config) *agent.Clients {
-	// Initialize all clients
 	// Fulcrum client for communicating with the Fulcrum Core API
-	fulcrumCli := fulcrum.NewFulcrumClient(cfg.FulcrumAPIURL, cfg.AgentToken, httpcli.WithSkipTLSVerify(cfg.SkipTLSVerify))
+	fulcrumCli := fulcrum.NewFulcrumClient(cfg.FulcrumAPIURL, cfg.FulcrumAPIToken, httpcli.WithSkipTLSVerify(cfg.SkipTLSVerify))
 
 	// Proxmox client for VM management
 	proxmoxHttpClient := httpcli.NewHTTPClient(cfg.ProxmoxAPIURL, cfg.ProxmoxAPIToken, httpcli.WithSkipTLSVerify(cfg.SkipTLSVerify))
@@ -115,9 +114,12 @@ func initRealClients(cfg *config.Config) *agent.Clients {
 }
 
 // initMockClients creates mock implementations for testing
-func initMockClients() *agent.Clients {
+func initMockClients(cfg *config.Config) *agent.Clients {
+	// Fulcrum client for communicating with the Fulcrum Core API
+	fulcrumCli := fulcrum.NewFulcrumClient(cfg.FulcrumAPIURL, cfg.FulcrumAPIToken, httpcli.WithSkipTLSVerify(cfg.SkipTLSVerify))
+
 	return &agent.Clients{
-		Fulcrum: agent.NewMockFulcrumClient(),
+		Fulcrum: fulcrumCli,
 		Proxmox: agent.NewMockProxmoxClient("mock-node"),
 		Kamaji:  agent.NewMockKamajiClient(),
 		SSH:     agent.NewMockSSHClient(),

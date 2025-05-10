@@ -25,7 +25,7 @@ func TestVMIntegration(t *testing.T) {
 	// Skip if not an integration test
 	testhelp.SkipIfNotIntegrationTest(t)
 
-	cfg, err := config.Builder().WithEnv("../..").Build()
+	cfg, err := config.Builder().WithEnv().Build()
 	require.NoError(t, err)
 
 	httpCli := httpcli.NewHTTPClient(cfg.ProxmoxAPIURL, cfg.ProxmoxAPIToken,

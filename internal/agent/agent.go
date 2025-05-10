@@ -25,7 +25,7 @@ func (c *Clients) Close() {
 type Agent struct {
 	fulcrumCli     FulcrumClient
 	metricInterval time.Duration
-	healthInterval time.Duration
+	pollInterval   time.Duration
 	jobHandler     *JobHandler
 	stopCh         chan struct{}
 	wg             sync.WaitGroup
@@ -44,10 +44,12 @@ func New(cli *Clients, pollInterval, metricInterval time.Duration) (*Agent, erro
 	)
 
 	return &Agent{
-		fulcrumCli: cli.Fulcrum,
-		jobHandler: jobHandler,
-		stopCh:     make(chan struct{}),
-		connected:  false,
+		fulcrumCli:     cli.Fulcrum,
+		metricInterval: metricInterval,
+		pollInterval:   pollInterval,
+		jobHandler:     jobHandler,
+		stopCh:         make(chan struct{}),
+		connected:      false,
 	}, nil
 }
 
@@ -142,7 +144,7 @@ func (a *Agent) reportMetrics(ctx context.Context) {
 func (a *Agent) pollJobs(ctx context.Context) {
 	defer a.wg.Done()
 
-	ticker := time.NewTicker(a.healthInterval)
+	ticker := time.NewTicker(a.pollInterval)
 	defer ticker.Stop()
 
 	for {

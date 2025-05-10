@@ -31,7 +31,7 @@ func TestKamajiProxmoxIntegration(t *testing.T) {
 	testhelp.SkipIfNotIntegrationTest(t)
 
 	// Load configuration from .env file
-	cfg, err := config.Builder().WithEnv("../..").Build()
+	cfg, err := config.Builder().WithEnv().Build()
 	require.NoError(t, err, "Failed to load configuration")
 	require.NotNil(t, cfg, "Configuration should not be nil")
 

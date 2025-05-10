@@ -18,7 +18,7 @@ func TestCopyFile(t *testing.T) {
 	testhelp.SkipIfNotIntegrationTest(t)
 
 	// Load configuration from .env
-	cfg, err := config.Builder().WithEnv("../..").Build()
+	cfg, err := config.Builder().WithEnv().Build()
 	if err != nil {
 		t.Fatalf("Failed to load configuration: %v", err)
 	}

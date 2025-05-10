@@ -342,7 +342,7 @@ func (c *Client) GetTenantCAHash(ctx context.Context, name string) (string, erro
 	return fmt.Sprintf("sha256:%s", encHash), nil
 }
 
-func (c *Client) getTenantControlPlane(ctx context.Context, name string) (*TCPResponse, error) {
+func (c *Client) getTenantControlPlane(_ context.Context, name string) (*TCPResponse, error) {
 	u, err := c.dynamicClient.Resource(tcpGVR).Namespace(KamajiNamespace).Get(
 		context.Background(),
 		name,
