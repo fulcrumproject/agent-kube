@@ -106,18 +106,28 @@ type Job struct {
 	ErrorMessage string    `json:"errorMessage"`
 }
 
+type MetricType string
+
+const (
+	MetricTypeVMCPUUsage          MetricType = "vm.cpu.usage"
+	MetricTypeVMMemoryUsage       MetricType = "vm.memory.usage"
+	MetricTypeVMDiskUsage         MetricType = "vm.disk.usage"
+	MetricTypeVMNetworkThroughput MetricType = "vm.network.throughput"
+)
+
 // MetricEntry represents a single metric measurement
 type MetricEntry struct {
-	ExternalID string  `json:"externalId"`
-	ResourceID string  `json:"resourceId"`
-	Value      float64 `json:"value"`
-	TypeName   string  `json:"typeName"`
+	ExternalID string     `json:"externalId"`
+	ResourceID string     `json:"resourceId"`
+	Value      float64    `json:"value"`
+	TypeName   MetricType `json:"typeName"`
 }
 
 // FulcrumClient defines the interface for communication with the Fulcrum Core API
 type FulcrumClient interface {
 	UpdateAgentStatus(status string) error
 	GetAgentInfo() (map[string]any, error)
+	GetServices() ([]*Service, error)
 	GetPendingJobs() ([]*Job, error)
 	ClaimJob(jobID string) error
 	CompleteJob(jobID string, response JobResponse) error

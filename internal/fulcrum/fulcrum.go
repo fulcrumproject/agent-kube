@@ -160,3 +160,23 @@ func (c *HTTPFulcrumClient) ReportMetric(metric *agent.MetricEntry) error {
 
 	return nil
 }
+
+// GetServices retrieves all services from Fulcrum Core
+func (c *HTTPFulcrumClient) GetServices() ([]*agent.Service, error) {
+	resp, err := c.httpClient.Get("/api/v1/services")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to get services, status: %d", resp.StatusCode)
+	}
+
+	var services []*agent.Service
+	if err := json.NewDecoder(resp.Body).Decode(&services); err != nil {
+		return nil, fmt.Errorf("failed to decode services response: %w", err)
+	}
+
+	return services, nil
+}

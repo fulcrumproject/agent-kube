@@ -23,15 +23,16 @@ func (c *Clients) Close() {
 
 // Agent is the main agent implementation
 type Agent struct {
-	fulcrumCli     FulcrumClient
-	metricInterval time.Duration
-	pollInterval   time.Duration
-	jobHandler     *JobHandler
-	stopCh         chan struct{}
-	wg             sync.WaitGroup
-	startTime      time.Time
-	connected      bool
-	agentID        string
+	fulcrumCli      FulcrumClient
+	metricsReporter *MetricsReporter
+	metricInterval  time.Duration
+	pollInterval    time.Duration
+	jobHandler      *JobHandler
+	stopCh          chan struct{}
+	wg              sync.WaitGroup
+	startTime       time.Time
+	connected       bool
+	agentID         string
 }
 
 // New creates a new agent
@@ -42,14 +43,19 @@ func New(cli *Clients, pollInterval, metricInterval time.Duration) (*Agent, erro
 		cli.Kamaji,
 		cli.SSH,
 	)
+	metricsReporter := NewMetricsReporter(
+		cli.Fulcrum,
+		cli.Proxmox,
+	)
 
 	return &Agent{
-		fulcrumCli:     cli.Fulcrum,
-		metricInterval: metricInterval,
-		pollInterval:   pollInterval,
-		jobHandler:     jobHandler,
-		stopCh:         make(chan struct{}),
-		connected:      false,
+		fulcrumCli:      cli.Fulcrum,
+		metricsReporter: metricsReporter,
+		metricInterval:  metricInterval,
+		pollInterval:    pollInterval,
+		jobHandler:      jobHandler,
+		stopCh:          make(chan struct{}),
+		connected:       false,
 	}, nil
 }
 
@@ -128,10 +134,10 @@ func (a *Agent) reportMetrics(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			// _, err := a.metricsReporter.Report()
-			// if err != nil {
-			// 	log.Printf("Error reporting metrics: %v", err)
-			// }
+			err := a.metricsReporter.Report()
+			if err != nil {
+				log.Printf("Error reporting metrics: %v", err)
+			}
 		case <-a.stopCh:
 			return
 		case <-ctx.Done():

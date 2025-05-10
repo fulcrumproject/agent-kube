@@ -15,7 +15,6 @@ type MockFulcrumClient struct {
 	jobMap        map[string]int
 	service       map[string]Service
 	serviceExtIDs map[string]string
-	metrics       []*MetricEntry
 }
 
 // NewMockFulcrumClient creates a new in-memory stub Fulcrum client
@@ -24,7 +23,6 @@ func NewMockFulcrumClient() *MockFulcrumClient {
 		agentStatus: "Online",
 		jobs:        []*Job{},
 		jobMap:      make(map[string]int),
-		metrics:     []*MetricEntry{},
 		agentInfo: map[string]any{
 			"id":   "test-agent-id",
 			"name": "test-agent",
@@ -221,23 +219,8 @@ func (c *MockFulcrumClient) FailJob(jobID string, errorMessage string) error {
 
 // ReportMetric reports a metric
 func (c *MockFulcrumClient) ReportMetric(metric *MetricEntry) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.metrics = append(c.metrics, metric)
+	fmt.Printf("Metric %s %s %s=%v", metric.ExternalID, metric.ResourceID, metric.TypeName, metric.Value)
 	return nil
-}
-
-// GetReportedMetrics returns all reported metrics (for test verification)
-func (c *MockFulcrumClient) GetReportedMetrics() []*MetricEntry {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	// Return a copy to avoid test interference
-	metricsCopy := make([]*MetricEntry, len(c.metrics))
-	copy(metricsCopy, c.metrics)
-
-	return metricsCopy
 }
 
 // CreateService creates a new service with the given parameters
@@ -473,4 +456,23 @@ func (c *MockFulcrumClient) EnqueueJob(job *Job) error {
 	c.jobs = append(c.jobs, job)
 	c.jobMap[job.ID] = len(c.jobs) - 1
 	return nil
+}
+
+// GetServices retrieves all services from the mock client
+func (c *MockFulcrumClient) GetServices() ([]*Service, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	// Create a slice to hold all services
+	services := make([]*Service, 0, len(c.service))
+
+	// Convert the map of services to a slice of service pointers
+	for _, svc := range c.service {
+		// We need to make a copy of the service to avoid
+		// issues with map values being overwritten
+		serviceCopy := svc
+		services = append(services, &serviceCopy)
+	}
+
+	return services, nil
 }
