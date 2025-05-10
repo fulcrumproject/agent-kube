@@ -17,17 +17,7 @@ type MockTenantControlPlane struct {
 	CAHash       string
 	KubeConfig   string
 	CreationTime time.Time
-	Nodes        map[string]*MockTenantNode
 	mu           sync.RWMutex
-}
-
-// MockTenantNode represents a node in the tenant control plane
-type MockTenantNode struct {
-	Name           string
-	Ready          bool
-	KubeletVersion string
-	Addresses      map[string]string
-	CreatedAt      time.Time
 }
 
 // MockKamajiClient implements KamajiClient interface for testing
@@ -61,7 +51,6 @@ func (c *MockKamajiClient) CreateTenantControlPlane(ctx context.Context, name st
 		CAHash:       fmt.Sprintf("sha256:test-ca-hash-for-%s", name),
 		KubeConfig:   fmt.Sprintf("apiVersion: v1\nkind: Config\nclusters:\n- cluster:\n    server: https://%s.example.com:6443\n  name: %s", name, name),
 		CreationTime: time.Now(),
-		Nodes:        make(map[string]*MockTenantNode),
 	}
 
 	return nil
@@ -197,69 +186,23 @@ func (t *StubKamajiTenantClient) CreateJoinToken(ctx context.Context, tenantName
 
 // DeleteWorkerNode deletes a worker node
 func (t *StubKamajiTenantClient) DeleteWorkerNode(ctx context.Context, nodeName string) error {
-	t.tcp.mu.Lock()
-	defer t.tcp.mu.Unlock()
-
-	if _, exists := t.tcp.Nodes[nodeName]; !exists {
-		return fmt.Errorf("node %s not found", nodeName)
-	}
-
-	delete(t.tcp.Nodes, nodeName)
+	// In the stub, we just pretend to delete the node
 	return nil
 }
 
 // GetNodeStatus gets the status of a node
 func (t *StubKamajiTenantClient) GetNodeStatus(ctx context.Context, nodeName string) (*NodeStatus, error) {
-	t.tcp.mu.RLock()
-	defer t.tcp.mu.RUnlock()
-
-	node, exists := t.tcp.Nodes[nodeName]
-	if !exists {
-		return nil, fmt.Errorf("node %s not found", nodeName)
-	}
-
 	return &NodeStatus{
-		Name:           node.Name,
-		Ready:          node.Ready,
-		KubeletVersion: node.KubeletVersion,
-		Addresses:      node.Addresses,
-		CreatedAt:      node.CreatedAt,
+		Name:           nodeName,
+		Ready:          true,
+		KubeletVersion: "v1.21.0",
+		Addresses:      map[string]string{"InternalIP": "1.2.3.4"},
+		CreatedAt:      time.Now(),
 	}, nil
 }
 
 // CreateCalicoResources applies Calico networking resources to the tenant cluster
 func (t *StubKamajiTenantClient) CreateCalicoResources(ctx context.Context) error {
 	// In the stub, we just pretend to apply the resources
-	return nil
-}
-
-// AddNode adds a node to the tenant control plane (for test setup)
-func (t *StubKamajiTenantClient) AddNode(name string, ready bool, kubeletVersion string) {
-	t.tcp.mu.Lock()
-	defer t.tcp.mu.Unlock()
-
-	t.tcp.Nodes[name] = &MockTenantNode{
-		Name:           name,
-		Ready:          ready,
-		KubeletVersion: kubeletVersion,
-		Addresses: map[string]string{
-			"InternalIP": fmt.Sprintf("10.0.0.%d", len(t.tcp.Nodes)+1),
-			"Hostname":   name,
-		},
-		CreatedAt: time.Now(),
-	}
-}
-
-// SetNodeReady sets the ready status of a node (for test setup)
-func (t *StubKamajiTenantClient) SetNodeReady(name string, ready bool) error {
-	t.tcp.mu.Lock()
-	defer t.tcp.mu.Unlock()
-
-	node, exists := t.tcp.Nodes[name]
-	if !exists {
-		return fmt.Errorf("node %s not found", name)
-	}
-
-	node.Ready = ready
 	return nil
 }

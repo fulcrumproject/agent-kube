@@ -85,9 +85,9 @@ func (h *JobHandler) processJob(job *Job) (*JobResponse, error) {
 	case JobActionServiceCreate:
 		return h.handleServiceCreate(job)
 	case JobActionServiceColdUpdate:
-		return h.handleServiceColdUpdate(job)
+		return h.handleServiceUpdate(job, false)
 	case JobActionServiceHotUpdate:
-		return h.handleServiceHotUpdate(job)
+		return h.handleServiceUpdate(job, true)
 	case JobActionServiceStart:
 		return h.handleServiceStart(job)
 	case JobActionServiceStop:
@@ -165,35 +165,27 @@ func (h *JobHandler) handleServiceCreate(job *Job) (*JobResponse, error) {
 	return resp, nil
 }
 
-// handleServiceHotUpdate handles hot updates to a service (when service is running)
+// handleServiceUpdate handles the updates to a service
 // It adds or removes nodes based on the difference between current and target properties
-// If the service is stopped, VMs will not be started
-// The size of VM cannot be changed
-func (h *JobHandler) handleServiceHotUpdate(job *Job) (*JobResponse, error) {
+// VMs will be started or stopped based on their target state if start is true
+func (h *JobHandler) handleServiceUpdate(job *Job, start bool) (*JobResponse, error) {
 	ctx := context.Background()
 	resp := &JobResponse{
-		Resources: &Resources{
-			Nodes: make(map[string]int, 0),
-		},
+		Resources:  job.Service.Resources,
+		ExternalID: job.Service.ExternalID,
 	}
 
-	// Use existing nodes map from resources if available
-	if job.Service.Resources != nil && job.Service.Resources.Nodes != nil {
-		resp.Resources.Nodes = job.Service.Resources.Nodes
+	// Check if job has target and current properties
+	if job.Service.TargetProperties == nil {
+		return nil, fmt.Errorf("target properties are nil")
 	}
-
-	tenantName := job.Service.Name
+	if job.Service.CurrentProperties == nil {
+		return nil, fmt.Errorf("current properties are nil")
+	}
 
 	// Get current and target nodes
-	var currentNodes []Node
-	if job.Service.CurrentProperties != nil && job.Service.CurrentProperties.Nodes != nil {
-		currentNodes = job.Service.CurrentProperties.Nodes
-	}
-
-	var targetNodes []Node
-	if job.Service.TargetProperties != nil && job.Service.TargetProperties.Nodes != nil {
-		targetNodes = job.Service.TargetProperties.Nodes
-	}
+	currentNodes := job.Service.CurrentProperties.Nodes
+	targetNodes := job.Service.TargetProperties.Nodes
 
 	// Create a map for quick lookup of current nodes
 	currentNodesMap := make(map[string]Node)
@@ -207,182 +199,103 @@ func (h *JobHandler) handleServiceHotUpdate(job *Job) (*JobResponse, error) {
 		targetNodesMap[node.ID] = node
 	}
 
+	// Check if there are changes in the node size
+	for _, targetNode := range targetNodes {
+		currentNode, exists := currentNodesMap[targetNode.ID]
+		if exists && targetNode.Size != currentNode.Size {
+			return nil, fmt.Errorf("changing VM size is not supported: node %s", targetNode.ID)
+		}
+	}
+
+	// Get nodes to be added, removed and updated
+	var nodesToAdd []Node
+	var nodesToRemove []Node
+	var nodesToStart []Node
+	var nodesToStop []Node
+	for _, targetNode := range targetNodes {
+		if currentNode, exists := currentNodesMap[targetNode.ID]; !exists {
+			nodesToAdd = append(nodesToAdd, targetNode)
+		} else {
+			if currentNode.State != targetNode.State {
+				if targetNode.State == NodeStateOn {
+					nodesToStart = append(nodesToStart, targetNode)
+				} else {
+					nodesToStop = append(nodesToStop, targetNode)
+				}
+			}
+		}
+	}
+	for _, currentNode := range currentNodes {
+		if _, exists := targetNodesMap[currentNode.ID]; !exists {
+			nodesToRemove = append(nodesToRemove, currentNode)
+		}
+	}
+
+	tenantName := job.Service.Name
+
 	// Get tenant client to manage worker nodes
 	tenantClient, err := h.kamajiCli.GetTenantClient(ctx, tenantName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tenant client: %w", err)
 	}
 
-	// Handle nodes that are only in the target (add them)
-	for _, targetNode := range targetNodes {
-		currentNode, exists := currentNodesMap[targetNode.ID]
-
-		// If the node doesn't exist in current, create it
-		if !exists {
-			vmID, err := h.createVM(ctx, tenantName, targetNode)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create node %s: %w", targetNode.ID, err)
-			}
-			resp.Resources.Nodes[targetNode.ID] = vmID
-
+	// Add new nodes
+	for _, targetNode := range nodesToAdd {
+		vmID, err := h.createVM(ctx, tenantName, targetNode)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create node %s: %w", targetNode.ID, err)
+		}
+		resp.Resources.Nodes[targetNode.ID] = vmID
+		if start && targetNode.State == NodeStateOn {
 			// Start the VM if it should be in "On" state
-			if targetNode.State == NodeStateOn {
-				err := h.startVM(vmID)
-				if err != nil {
-					return nil, fmt.Errorf("failed to start node %s: %w", targetNode.ID, err)
-				}
-			}
-		} else {
-			// Node exists in both current and target - check for state changes
-			vmID := resp.Resources.Nodes[targetNode.ID]
-
-			// Validate that size hasn't changed (not allowed)
-			if targetNode.Size != currentNode.Size {
-				return nil, fmt.Errorf("changing VM size is not supported: node %s", targetNode.ID)
-			}
-
-			// Update state if needed
-			if currentNode.State == NodeStateOff && targetNode.State == NodeStateOn {
-				// Start the VM
-				err := h.startVM(vmID)
-				if err != nil {
-					return nil, fmt.Errorf("failed to start node %s: %w", targetNode.ID, err)
-				}
-			} else if currentNode.State == NodeStateOn && targetNode.State == NodeStateOff {
-				// Stop the VM
-				err := h.stopVM(vmID)
-				if err != nil {
-					return nil, fmt.Errorf("failed to stop node %s: %w", targetNode.ID, err)
-				}
-			}
-		}
-	}
-
-	// Handle nodes that are only in the current (remove them)
-	for _, currentNode := range currentNodes {
-		if _, exists := targetNodesMap[currentNode.ID]; !exists {
-			// Node exists in current but not in target - delete it
-			if vmID, ok := resp.Resources.Nodes[currentNode.ID]; ok {
-				// Delete the VM
-				if err := h.deleteVM(vmID); err != nil {
-					return nil, fmt.Errorf("failed to delete node %s: %w", currentNode.ID, err)
-				}
-
-				// Delete the node from Kubernetes
-				if err := tenantClient.DeleteWorkerNode(ctx, currentNode.ID); err != nil {
-					return nil, fmt.Errorf("failed to delete worker node %s: %w", currentNode.ID, err)
-				}
-
-				// Remove from resources
-				delete(resp.Resources.Nodes, currentNode.ID)
-			}
-		}
-	}
-
-	return resp, nil
-}
-
-// handleServiceColdUpdate handles cold updates to a service (when service is stopped)
-// It adds or removes nodes based on the difference between current and target properties
-// VMs will not be started regardless of their target state
-// The size of VM cannot be changed
-func (h *JobHandler) handleServiceColdUpdate(job *Job) (*JobResponse, error) {
-	ctx := context.Background()
-	resp := &JobResponse{
-		Resources: &Resources{
-			Nodes: make(map[string]int, 0),
-		},
-	}
-
-	// Use existing nodes map from resources if available
-	if job.Service.Resources != nil && job.Service.Resources.Nodes != nil {
-		resp.Resources.Nodes = job.Service.Resources.Nodes
-	}
-
-	tenantName := job.Service.Name
-
-	// Get current and target nodes
-	var currentNodes []Node
-	if job.Service.CurrentProperties != nil && job.Service.CurrentProperties.Nodes != nil {
-		currentNodes = job.Service.CurrentProperties.Nodes
-	}
-
-	var targetNodes []Node
-	if job.Service.TargetProperties != nil && job.Service.TargetProperties.Nodes != nil {
-		targetNodes = job.Service.TargetProperties.Nodes
-	}
-
-	// Create a map for quick lookup of current nodes
-	currentNodesMap := make(map[string]Node)
-	for _, node := range currentNodes {
-		currentNodesMap[node.ID] = node
-	}
-
-	// Create a map for quick lookup of target nodes
-	targetNodesMap := make(map[string]Node)
-	for _, node := range targetNodes {
-		targetNodesMap[node.ID] = node
-	}
-
-	// Get tenant client to manage worker nodes
-	tenantClient, err := h.kamajiCli.GetTenantClient(ctx, tenantName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get tenant client: %w", err)
-	}
-
-	// Handle nodes that are only in the target (add them)
-	for _, targetNode := range targetNodes {
-		currentNode, exists := currentNodesMap[targetNode.ID]
-
-		// If the node doesn't exist in current, create it
-		if !exists {
-			vmID, err := h.createVM(ctx, tenantName, targetNode)
+			err := h.startVM(vmID)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create node %s: %w", targetNode.ID, err)
-			}
-			resp.Resources.Nodes[targetNode.ID] = vmID
-
-			// In cold update, we don't start VMs regardless of the target state
-		} else {
-			// Node exists in both current and target
-
-			// Validate that size hasn't changed (not allowed)
-			if targetNode.Size != currentNode.Size {
-				return nil, fmt.Errorf("changing VM size is not supported: node %s", targetNode.ID)
-			}
-
-			// In cold update, we keep VMs in their current state
-			// No state changes (start/stop) should be performed
-		}
-	}
-
-	// Handle nodes that are only in the current (remove them)
-	for _, currentNode := range currentNodes {
-		if _, exists := targetNodesMap[currentNode.ID]; !exists {
-			// Node exists in current but not in target - delete it
-			if vmID, ok := resp.Resources.Nodes[currentNode.ID]; ok {
-				// Delete the VM
-				if err := h.deleteVM(vmID); err != nil {
-					return nil, fmt.Errorf("failed to delete node %s: %w", currentNode.ID, err)
-				}
-
-				// Delete the node from Kubernetes
-				if err := tenantClient.DeleteWorkerNode(ctx, currentNode.ID); err != nil {
-					return nil, fmt.Errorf("failed to delete worker node %s: %w", currentNode.ID, err)
-				}
-
-				// Remove from resources
-				delete(resp.Resources.Nodes, currentNode.ID)
+				return nil, fmt.Errorf("failed to start node %s: %w", targetNode.ID, err)
 			}
 		}
 	}
 
+	// Remove old nodes
+	for _, currentNode := range nodesToRemove {
+		if vmID, ok := resp.Resources.Nodes[currentNode.ID]; ok {
+			// Delete the VM
+			if err := h.deleteVM(vmID); err != nil {
+				return nil, fmt.Errorf("failed to delete node %s: %w", currentNode.ID, err)
+			}
+			// Delete the node from Kubernetes
+			if err := tenantClient.DeleteWorkerNode(ctx, currentNode.ID); err != nil {
+				return nil, fmt.Errorf("failed to delete worker node %s: %w", currentNode.ID, err)
+			}
+			// Remove from resources
+			delete(resp.Resources.Nodes, currentNode.ID)
+		}
+	}
+
+	// Start or stop existing nodes
+	for _, currentNode := range nodesToStart {
+		if vmID, ok := resp.Resources.Nodes[currentNode.ID]; ok {
+			// Start the VM
+			err := h.startVM(vmID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to start node %s: %w", currentNode.ID, err)
+			}
+		}
+	}
+	for _, currentNode := range nodesToStop {
+		if vmID, ok := resp.Resources.Nodes[currentNode.ID]; ok {
+			// Stop the VM
+			err := h.stopVM(vmID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to stop node %s: %w", currentNode.ID, err)
+			}
+		}
+	}
 	return resp, nil
 }
 
 // handleServiceStart starts the cluster service
 func (h *JobHandler) handleServiceStart(job *Job) (*JobResponse, error) {
-	iterateCurrNodes(job, func(node Node, vmID int) error {
+	err := iterateCurrNodes(job, func(node Node, vmID int) error {
 		if node.State == NodeStateOn {
 			err := h.startVM(vmID)
 			if err != nil {
@@ -391,12 +304,15 @@ func (h *JobHandler) handleServiceStart(job *Job) (*JobResponse, error) {
 		}
 		return nil
 	})
-	return &JobResponse{}, nil
+	return &JobResponse{
+		Resources:  job.Service.Resources,
+		ExternalID: job.Service.ExternalID,
+	}, err
 }
 
 // handleServiceStop stops the cluster service
 func (h *JobHandler) handleServiceStop(job *Job) (*JobResponse, error) {
-	iterateCurrNodes(job, func(node Node, vmID int) error {
+	err := iterateCurrNodes(job, func(node Node, vmID int) error {
 		if node.State == NodeStateOn {
 			err := h.stopVM(vmID)
 			if err != nil {
@@ -405,7 +321,10 @@ func (h *JobHandler) handleServiceStop(job *Job) (*JobResponse, error) {
 		}
 		return nil
 	})
-	return &JobResponse{}, nil
+	return &JobResponse{
+		Resources:  job.Service.Resources,
+		ExternalID: job.Service.ExternalID,
+	}, err
 }
 
 // handleServiceDelete deletes the cluster service
@@ -452,7 +371,7 @@ func iterateCurrNodes(job *Job, callback func(node Node, vmID int) error) error 
 	}
 
 	for _, node := range nodes {
-		if vmID, ok := vmIDs[node.ID]; ok && node.State == NodeStateOn {
+		if vmID, ok := vmIDs[node.ID]; ok {
 			err := callback(node, vmID)
 			if err != nil {
 				return err
@@ -464,7 +383,7 @@ func iterateCurrNodes(job *Job, callback func(node Node, vmID int) error) error 
 }
 
 // createVM creates a new node for a service
-func (h *JobHandler) createVM(ctx context.Context, serviceName string, node Node) (int, error) {
+func (h *JobHandler) createVM(_ context.Context, serviceName string, node Node) (int, error) {
 	vmName := fmt.Sprintf("%s-node-%s", serviceName, node.ID)
 	vmID := h.generateVMID(serviceName, node.ID)
 
@@ -520,7 +439,7 @@ func (h *JobHandler) stopVM(vmID int) error {
 
 	_, err = h.proxmoxCli.WaitForTask(t.TaskID, 1*time.Minute)
 	if err != nil {
-		return fmt.Errorf("failed to start VM: %w", err)
+		return fmt.Errorf("failed to stop VM: %w", err)
 	}
 
 	return nil

@@ -177,8 +177,12 @@ func (c *MockFulcrumClient) CompleteJob(jobID string, response JobResponse) erro
 	service.CurrentState = *service.TargetState
 	service.TargetState = nil
 
-	service.CurrentProperties = service.TargetProperties
-	service.TargetProperties = nil
+	// Only update CurrentProperties if TargetProperties is not nil
+	// This preserves CurrentProperties for actions like start/stop that don't modify properties
+	if service.TargetProperties != nil {
+		service.CurrentProperties = service.TargetProperties
+		service.TargetProperties = nil
+	}
 
 	// Store the updated service in the map by its proper ID
 	c.service[service.ID] = service
