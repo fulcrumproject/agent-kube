@@ -19,7 +19,7 @@ type VM struct {
 // Task represents a task in the in-memory stub
 type Task struct {
 	ID         string
-	Status     string // "running", "stopped"
+	Status     VMState
 	ExitStatus string // "OK", "ERROR"
 	StartTime  time.Time
 	Type       string
@@ -85,7 +85,7 @@ func (c *MockProxmoxClient) createTask(taskType string, vmID int, exitStatus str
 
 	task := &Task{
 		ID:         taskID,
-		Status:     "stopped", // Task is immediately completed
+		Status:     VMStateStopped, // Task is immediately completed
 		ExitStatus: exitStatus,
 		StartTime:  time.Now(),
 		Type:       taskType,
@@ -121,7 +121,7 @@ func (c *MockProxmoxClient) CloneVM(_ int, newVMID int, name string) (*TaskRespo
 	c.vms[newVMID] = &VM{
 		ID:     newVMID,
 		Name:   name,
-		State:  "stopped",
+		State:  VMStateStopped,
 		Cores:  2,
 		Memory: 2048,
 	}
@@ -161,12 +161,12 @@ func (c *MockProxmoxClient) StartVM(vmID int) (*TaskResponse, error) {
 		return nil, fmt.Errorf("VM with ID %d not found", vmID)
 	}
 
-	if vm.State == "running" {
+	if vm.State == VMStateRunning {
 		return nil, fmt.Errorf("VM with ID %d is already running", vmID)
 	}
 
 	// Start the VM synchronously
-	vm.State = "running"
+	vm.State = VMStateRunning
 
 	// Create a completed task
 	return c.createTask("qmstart", vmID, "OK"), nil
@@ -182,12 +182,12 @@ func (c *MockProxmoxClient) StopVM(vmID int) (*TaskResponse, error) {
 		return nil, fmt.Errorf("VM with ID %d not found", vmID)
 	}
 
-	if vm.State == "stopped" {
+	if vm.State == VMStateStopped {
 		return nil, fmt.Errorf("VM with ID %d is already stopped", vmID)
 	}
 
 	// Stop the VM synchronously
-	vm.State = "stopped"
+	vm.State = VMStateStopped
 
 	// Create a completed task
 	return c.createTask("qmstop", vmID, "OK"), nil
@@ -266,7 +266,7 @@ func (c *MockProxmoxClient) GetVMInfo(vmID int) (*VMInfo, error) {
 	}
 
 	// If VM is running, simulate some resource usage
-	if vm.State == "running" {
+	if vm.State == VMStateRunning {
 		status.CPU = 0.05                    // 5% CPU usage
 		status.Memory = status.MaxMemory / 4 // Using 25% of allocated memory
 		status.Uptime = 3600                 // 1 hour uptime (mock value)

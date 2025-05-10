@@ -123,11 +123,21 @@ type MetricEntry struct {
 	TypeName   MetricType `json:"typeName"`
 }
 
+// ServicesResponse represents the paginated response for services
+type ServicesResponse struct {
+	Items       []*Service `json:"items"`
+	TotalItems  int        `json:"totalItems"`
+	TotalPages  int        `json:"totalPages"`
+	CurrentPage int        `json:"currentPage"`
+	HasNext     bool       `json:"hasNext"`
+	HasPrev     bool       `json:"hasPrev"`
+}
+
 // FulcrumClient defines the interface for communication with the Fulcrum Core API
 type FulcrumClient interface {
 	UpdateAgentStatus(status string) error
 	GetAgentInfo() (map[string]any, error)
-	GetServices() ([]*Service, error)
+	GetServices(page int) (*ServicesResponse, error)
 	GetPendingJobs() ([]*Job, error)
 	ClaimJob(jobID string) error
 	CompleteJob(jobID string, response JobResponse) error

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"fulcrumproject.org/kube-agent/internal/agent"
 	"fulcrumproject.org/kube-agent/internal/httpcli"
@@ -162,8 +163,15 @@ func (c *HTTPFulcrumClient) ReportMetric(metric *agent.MetricEntry) error {
 }
 
 // GetServices retrieves all services from Fulcrum Core
-func (c *HTTPFulcrumClient) GetServices() ([]*agent.Service, error) {
-	resp, err := c.httpClient.Get("/api/v1/services")
+func (c *HTTPFulcrumClient) GetServices(page int) (*agent.ServicesResponse, error) {
+	url, err := url.Parse("/api/v1/services")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse URL: %w", err)
+	}
+	query := url.Query()
+	query.Set("page", fmt.Sprintf("%d", page))
+
+	resp, err := c.httpClient.Get(url.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
@@ -173,10 +181,10 @@ func (c *HTTPFulcrumClient) GetServices() ([]*agent.Service, error) {
 		return nil, fmt.Errorf("failed to get services, status: %d", resp.StatusCode)
 	}
 
-	var services []*agent.Service
-	if err := json.NewDecoder(resp.Body).Decode(&services); err != nil {
+	var servicesResponse agent.ServicesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&servicesResponse); err != nil {
 		return nil, fmt.Errorf("failed to decode services response: %w", err)
 	}
 
-	return services, nil
+	return &servicesResponse, nil
 }

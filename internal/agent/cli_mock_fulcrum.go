@@ -459,7 +459,7 @@ func (c *MockFulcrumClient) EnqueueJob(job *Job) error {
 }
 
 // GetServices retrieves all services from the mock client
-func (c *MockFulcrumClient) GetServices() ([]*Service, error) {
+func (c *MockFulcrumClient) GetServices(_ int) (*ServicesResponse, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -474,5 +474,15 @@ func (c *MockFulcrumClient) GetServices() ([]*Service, error) {
 		services = append(services, &serviceCopy)
 	}
 
-	return services, nil
+	// Create a paginated response
+	response := &ServicesResponse{
+		Items:       services,
+		TotalItems:  len(services),
+		TotalPages:  1,
+		CurrentPage: 1,
+		HasNext:     false,
+		HasPrev:     false,
+	}
+
+	return response, nil
 }

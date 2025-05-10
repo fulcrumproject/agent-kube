@@ -45,15 +45,15 @@ type TaskResponse struct {
 
 // TaskStatus represents the status of a Proxmox task
 type TaskStatus struct {
-	ExitStatus string `json:"exitstatus"` // Such as 'OK' or 'ERROR'
-	Status     string `json:"status"`     // Such as 'stopped' or 'running'
-	Node       string `json:"node"`       // Node name where the task is running
-	PID        int    `json:"pid"`        // Process ID
-	Type       string `json:"type"`       // Task type
-	ID         string `json:"id"`         // Optional ID
-	User       string `json:"user"`       // User@realm who initiated the task
-	StartTime  int64  `json:"starttime"`  // Start time of the task
-	UpID       string `json:"upid"`       // Full UPID of the task
+	ExitStatus string  `json:"exitstatus"` // Such as 'OK' or 'ERROR'
+	Status     VMState `json:"status"`     // Such as 'stopped' or 'running'
+	Node       string  `json:"node"`       // Node name where the task is running
+	PID        int     `json:"pid"`        // Process ID
+	Type       string  `json:"type"`       // Task type
+	ID         string  `json:"id"`         // Optional ID
+	User       string  `json:"user"`       // User@realm who initiated the task
+	StartTime  int64   `json:"starttime"`  // Start time of the task
+	UpID       string  `json:"upid"`       // Full UPID of the task
 }
 
 type VMState string
