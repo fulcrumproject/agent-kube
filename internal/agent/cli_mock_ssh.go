@@ -61,3 +61,8 @@ func (s *MockSSHClient) Reset() {
 
 	s.filePaths = make(map[string]string)
 }
+
+// Close is a no-op for the mock client
+func (s *MockSSHClient) Close() error {
+	return nil
+}

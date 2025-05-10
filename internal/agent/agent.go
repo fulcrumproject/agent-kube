@@ -6,38 +6,45 @@ import (
 	"log"
 	"sync"
 	"time"
-
-	"fulcrumproject.org/kube-agent/internal/config"
 )
+
+type Clients struct {
+	Fulcrum FulcrumClient
+	Proxmox ProxmoxClient
+	Kamaji  KamajiClient
+	SSH     SSHClient
+}
+
+func (c *Clients) Close() {
+	if c.SSH != nil {
+		c.SSH.Close()
+	}
+}
 
 // Agent is the main agent implementation
 type Agent struct {
-	cfg        *config.Config
-	fulcrumCli FulcrumClient
-	jobHandler *JobHandler
-	stopCh     chan struct{}
-	wg         sync.WaitGroup
-	startTime  time.Time
-	connected  bool
-	agentID    string
+	fulcrumCli     FulcrumClient
+	metricInterval time.Duration
+	healthInterval time.Duration
+	jobHandler     *JobHandler
+	stopCh         chan struct{}
+	wg             sync.WaitGroup
+	startTime      time.Time
+	connected      bool
+	agentID        string
 }
 
 // New creates a new agent
-func New(
-	fulcrumCli FulcrumClient,
-	proxmoxCli ProxmoxClient,
-	kamajiCli KamajiClient,
-	sshCli SSHClient,
-) (*Agent, error) {
+func New(cli *Clients, pollInterval, metricInterval time.Duration) (*Agent, error) {
 	jobHandler := NewJobHandler(
-		fulcrumCli,
-		proxmoxCli,
-		kamajiCli,
-		sshCli,
+		cli.Fulcrum,
+		cli.Proxmox,
+		cli.Kamaji,
+		cli.SSH,
 	)
 
 	return &Agent{
-		fulcrumCli: fulcrumCli,
+		fulcrumCli: cli.Fulcrum,
 		jobHandler: jobHandler,
 		stopCh:     make(chan struct{}),
 		connected:  false,
@@ -113,7 +120,7 @@ func (a *Agent) heartbeat(ctx context.Context) {
 func (a *Agent) reportMetrics(ctx context.Context) {
 	defer a.wg.Done()
 
-	ticker := time.NewTicker(a.cfg.MetricReportInterval)
+	ticker := time.NewTicker(a.metricInterval)
 	defer ticker.Stop()
 
 	for {
@@ -135,7 +142,7 @@ func (a *Agent) reportMetrics(ctx context.Context) {
 func (a *Agent) pollJobs(ctx context.Context) {
 	defer a.wg.Done()
 
-	ticker := time.NewTicker(a.cfg.JobPollInterval)
+	ticker := time.NewTicker(a.healthInterval)
 	defer ticker.Stop()
 
 	for {
