@@ -298,11 +298,7 @@ func TestKamajiProxmoxIntegration(t *testing.T) {
 			return true, nil
 		})
 
-		if err != nil {
-			t.Logf("Warning: Node may not have joined properly or is not ready: %v", err)
-		} else {
-			t.Logf("Node successfully joined the cluster and is ready")
-		}
+		require.NoError(t, err, "Node should join the cluster and be ready")
 
 		t.Logf("Integration test completed - Kamaji tenant created and Proxmox VM joined as a worker node")
 	})
