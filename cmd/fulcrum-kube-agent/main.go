@@ -21,6 +21,7 @@ import (
 func main() {
 	// Parse command line flags
 	configPath := flag.String("config", "", "Path to configuration file")
+	useMock := flag.Bool("mock", false, "Use mock implementations of clients")
 	flag.Parse()
 
 	cfg, err := config.Builder().LoadFile(configPath).WithEnv(".").Build()
@@ -30,8 +31,14 @@ func main() {
 
 	log.Println("Starting agent ...")
 
-	// Initialize clients
-	clients := initRealClients(cfg)
+	// Initialize clients based on the mock flag
+	var clients *agent.Clients
+	if *useMock {
+		log.Println("Using mock clients...")
+		clients = initMockClients()
+	} else {
+		clients = initRealClients(cfg)
+	}
 	defer clients.Close()
 
 	// Create and start the agent with all required clients
@@ -104,5 +111,15 @@ func initRealClients(cfg *config.Config) *agent.Clients {
 		Proxmox: proxmoxCli,
 		Kamaji:  kamajiCli,
 		SSH:     sshCli,
+	}
+}
+
+// initMockClients creates mock implementations for testing
+func initMockClients() *agent.Clients {
+	return &agent.Clients{
+		Fulcrum: agent.NewMockFulcrumClient(),
+		Proxmox: agent.NewMockProxmoxClient("mock-node"),
+		Kamaji:  agent.NewMockKamajiClient(),
+		SSH:     agent.NewMockSSHClient(),
 	}
 }
