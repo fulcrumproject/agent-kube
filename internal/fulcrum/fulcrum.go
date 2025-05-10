@@ -100,7 +100,7 @@ func (c *HTTPFulcrumClient) ClaimJob(jobID string) error {
 }
 
 // CompleteJob marks a job as completed with results
-func (c *HTTPFulcrumClient) CompleteJob(jobID string, response any) error {
+func (c *HTTPFulcrumClient) CompleteJob(jobID string, response agent.JobResponse) error {
 	reqBody, err := json.Marshal(response)
 	if err != nil {
 		return fmt.Errorf("failed to marshal job completion request: %w", err)

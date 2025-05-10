@@ -7,22 +7,22 @@ import (
 	"time"
 )
 
-// TenantControlPlane represents a tenant control plane in the in-memory stub
-type TenantControlPlane struct {
+// MockTenantControlPlane represents a tenant control plane in the in-memory stub
+type MockTenantControlPlane struct {
 	Name         string
 	Version      string
 	Replicas     int
-	Status       string // "Creating", "Ready"
+	Status       string // "Provisioning", "Ready"
 	Endpoint     string
 	CAHash       string
 	KubeConfig   string
 	CreationTime time.Time
-	Nodes        map[string]*TenantNode
+	Nodes        map[string]*MockTenantNode
 	mu           sync.RWMutex
 }
 
-// TenantNode represents a node in the tenant control plane
-type TenantNode struct {
+// MockTenantNode represents a node in the tenant control plane
+type MockTenantNode struct {
 	Name           string
 	Ready          bool
 	KubeletVersion string
@@ -32,14 +32,14 @@ type TenantNode struct {
 
 // MockKamajiClient implements KamajiClient interface for testing
 type MockKamajiClient struct {
-	tenantControlPlanes map[string]*TenantControlPlane
+	tenantControlPlanes map[string]*MockTenantControlPlane
 	mu                  sync.RWMutex
 }
 
 // NewMockKamajiClient creates a new in-memory stub Kamaji client
 func NewMockKamajiClient() *MockKamajiClient {
 	return &MockKamajiClient{
-		tenantControlPlanes: make(map[string]*TenantControlPlane),
+		tenantControlPlanes: make(map[string]*MockTenantControlPlane),
 	}
 }
 
@@ -52,7 +52,7 @@ func (c *MockKamajiClient) CreateTenantControlPlane(ctx context.Context, name st
 		return fmt.Errorf("tenant control plane %s already exists", name)
 	}
 
-	c.tenantControlPlanes[name] = &TenantControlPlane{
+	c.tenantControlPlanes[name] = &MockTenantControlPlane{
 		Name:         name,
 		Version:      version,
 		Replicas:     replicas,
@@ -61,7 +61,7 @@ func (c *MockKamajiClient) CreateTenantControlPlane(ctx context.Context, name st
 		CAHash:       fmt.Sprintf("sha256:test-ca-hash-for-%s", name),
 		KubeConfig:   fmt.Sprintf("apiVersion: v1\nkind: Config\nclusters:\n- cluster:\n    server: https://%s.example.com:6443\n  name: %s", name, name),
 		CreationTime: time.Now(),
-		Nodes:        make(map[string]*TenantNode),
+		Nodes:        make(map[string]*MockTenantNode),
 	}
 
 	return nil
@@ -158,12 +158,12 @@ func (c *MockKamajiClient) GetTenantClient(ctx context.Context, name string) (Ka
 
 // StubKamajiTenantClient implements KamajiTenantClient for testing
 type StubKamajiTenantClient struct {
-	tcp    *TenantControlPlane
+	tcp    *MockTenantControlPlane
 	tokens map[string]*JoinTokenResponse
 }
 
 // NewStubKamajiTenantClient creates a new tenant client for testing
-func NewStubKamajiTenantClient(tcp *TenantControlPlane) *StubKamajiTenantClient {
+func NewStubKamajiTenantClient(tcp *MockTenantControlPlane) *StubKamajiTenantClient {
 	return &StubKamajiTenantClient{
 		tcp:    tcp,
 		tokens: make(map[string]*JoinTokenResponse),
@@ -238,7 +238,7 @@ func (t *StubKamajiTenantClient) AddNode(name string, ready bool, kubeletVersion
 	t.tcp.mu.Lock()
 	defer t.tcp.mu.Unlock()
 
-	t.tcp.Nodes[name] = &TenantNode{
+	t.tcp.Nodes[name] = &MockTenantNode{
 		Name:           name,
 		Ready:          ready,
 		KubeletVersion: kubeletVersion,

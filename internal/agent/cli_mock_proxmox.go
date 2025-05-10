@@ -75,9 +75,8 @@ func (c *MockProxmoxClient) GetVM(id int) (*VM, bool) {
 
 // createTask creates a new task which is immediately completed
 func (c *MockProxmoxClient) createTask(taskType string, vmID int, exitStatus string) *TaskResponse {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
+	// This method is called from methods that already have the mutex locked
+	// so we don't need to lock again
 	c.lastTaskID++
 
 	// Format similar to a Proxmox UPID
@@ -115,11 +114,12 @@ func (c *MockProxmoxClient) CloneVM(templateID int, newVMID int, name string) (*
 	defer c.mu.Unlock()
 
 	template, templateExists := c.vms[templateID]
-	_, newVMExists := c.vms[newVMID]
 
 	if !templateExists {
 		return nil, fmt.Errorf("template VM with ID %d not found", templateID)
 	}
+
+	_, newVMExists := c.vms[newVMID]
 
 	if newVMExists {
 		return nil, fmt.Errorf("VM with ID %d already exists", newVMID)

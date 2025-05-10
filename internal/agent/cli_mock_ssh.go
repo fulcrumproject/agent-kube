@@ -5,23 +5,23 @@ import (
 	"sync"
 )
 
-// MockSSH implements agent.SCP interface for testing
-type MockSSH struct {
+// MockSSHClient implements agent.SCP interface for testing
+type MockSSHClient struct {
 	// Map of filepaths to content
 	filePaths map[string]string
 	mu        sync.RWMutex
 }
 
 // NewMockSSHClient creates a new in-memory stub SCP client
-func NewMockSSHClient() *MockSSH {
-	return &MockSSH{
+func NewMockSSHClient() *MockSSHClient {
+	return &MockSSHClient{
 		filePaths: make(map[string]string),
 	}
 }
 
 // Copy implements the agent.SCP interface
 // It copies the given content to the specified filepath (in-memory)
-func (s *MockSSH) Copy(content, filePath string) error {
+func (s *MockSSHClient) Copy(content, filePath string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -31,7 +31,7 @@ func (s *MockSSH) Copy(content, filePath string) error {
 }
 
 // DeleteFile simulates deleting a file
-func (s *MockSSH) DeleteFile(filePath string) error {
+func (s *MockSSHClient) DeleteFile(filePath string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -46,7 +46,7 @@ func (s *MockSSH) DeleteFile(filePath string) error {
 }
 
 // FileExists checks if a file exists
-func (s *MockSSH) FileExists(filePath string) bool {
+func (s *MockSSHClient) FileExists(filePath string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -55,7 +55,7 @@ func (s *MockSSH) FileExists(filePath string) bool {
 }
 
 // Reset clears all files and operations
-func (s *MockSSH) Reset() {
+func (s *MockSSHClient) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
