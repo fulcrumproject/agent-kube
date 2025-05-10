@@ -168,7 +168,7 @@ func (h *JobHandler) handleServiceCreate(job *Job) (*JobResponse, error) {
 // handleServiceUpdate handles the updates to a service
 // It adds or removes nodes based on the difference between current and target properties
 // VMs will be started or stopped based on their target state if start is true
-func (h *JobHandler) handleServiceUpdate(job *Job, start bool) (*JobResponse, error) {
+func (h *JobHandler) handleServiceUpdate(job *Job, startStop bool) (*JobResponse, error) {
 	ctx := context.Background()
 	resp := &JobResponse{
 		Resources:  job.Service.Resources,
@@ -216,7 +216,7 @@ func (h *JobHandler) handleServiceUpdate(job *Job, start bool) (*JobResponse, er
 		if currentNode, exists := currentNodesMap[targetNode.ID]; !exists {
 			nodesToAdd = append(nodesToAdd, targetNode)
 		} else {
-			if currentNode.State != targetNode.State {
+			if startStop && currentNode.State != targetNode.State {
 				if targetNode.State == NodeStateOn {
 					nodesToStart = append(nodesToStart, targetNode)
 				} else {
@@ -246,7 +246,7 @@ func (h *JobHandler) handleServiceUpdate(job *Job, start bool) (*JobResponse, er
 			return nil, fmt.Errorf("failed to create node %s: %w", targetNode.ID, err)
 		}
 		resp.Resources.Nodes[targetNode.ID] = vmID
-		if start && targetNode.State == NodeStateOn {
+		if startStop && targetNode.State == NodeStateOn {
 			// Start the VM if it should be in "On" state
 			err := h.startVM(vmID)
 			if err != nil {

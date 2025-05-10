@@ -238,3 +238,39 @@ func (c *MockProxmoxClient) GetTaskStatus(taskID string) (*TaskStatus, error) {
 func (c *MockProxmoxClient) WaitForTask(taskID string, timeout time.Duration) (*TaskStatus, error) {
 	return c.GetTaskStatus(taskID)
 }
+
+// GetVMStatus retrieves the current status of a virtual machine
+func (c *MockProxmoxClient) GetVMStatus(vmID int) (*VMStatus, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	vm, exists := c.vms[vmID]
+	if !exists {
+		return nil, fmt.Errorf("VM with ID %d not found", vmID)
+	}
+
+	// Mock VM status with reasonable defaults
+	status := &VMStatus{
+		Name:      vm.Name,
+		Status:    vm.Status,
+		VMID:      vm.ID,
+		NodeName:  c.nodeName,
+		CPU:       0.0, // 0% CPU usage when not running
+		CPUCount:  vm.Cores,
+		Memory:    0,                              // No memory usage when not running
+		MaxMemory: int64(vm.Memory) * 1024 * 1024, // Convert MB to bytes
+		Disk:      1024 * 1024 * 1024,             // 1GB disk usage (mock value)
+		MaxDisk:   10 * 1024 * 1024 * 1024,        // 10GB max disk (mock value)
+		Uptime:    0,                              // No uptime when not running
+		QMPStatus: vm.Status,
+	}
+
+	// If VM is running, simulate some resource usage
+	if vm.Status == "running" {
+		status.CPU = 0.05                    // 5% CPU usage
+		status.Memory = status.MaxMemory / 4 // Using 25% of allocated memory
+		status.Uptime = 3600                 // 1 hour uptime (mock value)
+	}
+
+	return status, nil
+}

@@ -26,6 +26,9 @@ type ProxmoxClient interface {
 
 	// GetTaskStatus retrieves the current status of a task
 	GetTaskStatus(taskID string) (*TaskStatus, error)
+
+	// GetVMStatus retrieves the current status of a virtual machine
+	GetVMStatus(vmID int) (*VMStatus, error)
 }
 
 // TaskResponse represents a Proxmox API response containing a task ID
@@ -51,4 +54,20 @@ type TaskStatus struct {
 	User       string `json:"user"`       // User@realm who initiated the task
 	StartTime  int64  `json:"starttime"`  // Start time of the task
 	UpID       string `json:"upid"`       // Full UPID of the task
+}
+
+// VMStatus represents the status of a Proxmox virtual machine
+type VMStatus struct {
+	Name      string  `json:"name"`      // VM name
+	Status    string  `json:"status"`    // Such as 'running' or 'stopped'
+	VMID      int     `json:"vmid"`      // VM ID
+	NodeName  string  `json:"node"`      // Node name where the VM is running
+	CPU       float64 `json:"cpu"`       // Current CPU usage (0-1 range)
+	CPUCount  int     `json:"cpus"`      // Number of CPUs
+	Memory    int64   `json:"mem"`       // Current memory usage in bytes
+	MaxMemory int64   `json:"maxmem"`    // Maximum memory in bytes
+	Disk      int64   `json:"disk"`      // Disk usage in bytes
+	MaxDisk   int64   `json:"maxdisk"`   // Maximum disk size in bytes
+	Uptime    int64   `json:"uptime"`    // Uptime in seconds
+	QMPStatus string  `json:"qmpstatus"` // QEMU Machine Protocol status
 }

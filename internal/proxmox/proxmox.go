@@ -157,6 +157,58 @@ func (c *HTTPProxmoxClient) WaitForTask(taskID string, timeout time.Duration) (*
 	}
 }
 
+// GetVMStatus retrieves the current status of a virtual machine
+func (c *HTTPProxmoxClient) GetVMStatus(vmID int) (*agent.VMStatus, error) {
+	endpoint := fmt.Sprintf("/api2/json/nodes/%s/qemu/%d/status/current", c.nodeName, vmID)
+
+	resp, err := c.httpClient.Get(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Check response
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to get VM status, status: %d, body: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	// Parse response
+	var statusResp struct {
+		Data struct {
+			Name      string  `json:"name"`
+			Status    string  `json:"status"`
+			VMID      int     `json:"vmid"`
+			CPU       float64 `json:"cpu"`
+			CPUCount  int     `json:"cpus"`
+			Memory    int64   `json:"mem"`
+			MaxMemory int64   `json:"maxmem"`
+			Disk      int64   `json:"disk"`
+			MaxDisk   int64   `json:"maxdisk"`
+			Uptime    int64   `json:"uptime"`
+			QMPStatus string  `json:"qmpstatus"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&statusResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &agent.VMStatus{
+		Name:      statusResp.Data.Name,
+		Status:    statusResp.Data.Status,
+		VMID:      statusResp.Data.VMID,
+		NodeName:  c.nodeName,
+		CPU:       statusResp.Data.CPU,
+		CPUCount:  statusResp.Data.CPUCount,
+		Memory:    statusResp.Data.Memory,
+		MaxMemory: statusResp.Data.MaxMemory,
+		Disk:      statusResp.Data.Disk,
+		MaxDisk:   statusResp.Data.MaxDisk,
+		Uptime:    statusResp.Data.Uptime,
+		QMPStatus: statusResp.Data.QMPStatus,
+	}, nil
+}
+
 func (c *HTTPProxmoxClient) post(endpoint string, form url.Values) (*agent.TaskResponse, error) {
 	resp, err := c.httpClient.PostForm(endpoint, form)
 	if err != nil {
