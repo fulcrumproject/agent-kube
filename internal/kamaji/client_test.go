@@ -74,6 +74,9 @@ func TestKamajiClientIntegration(t *testing.T) {
 		require.Contains(t, caHash, "sha256:", "CA hash should be in the format 'sha256:[hash]'")
 		t.Logf("Tenant CA hash retrieved successfully: %s", caHash)
 
+		// TODO should be a better way to check if the tenant is ready
+		time.Sleep(10 * time.Second) // Wait for a few seconds before proceeding
+
 		// Get the tenant client
 		t.Logf("Getting tenant client for: %s", testTenantName)
 		tenantClient, err := client.GetTenantClient(ctx, testTenantName)
@@ -108,8 +111,10 @@ func TestKamajiClientIntegration(t *testing.T) {
 
 		t.Logf("Tenant control plane deleted successfully")
 
+		time.Sleep(10 * time.Second) // Wait for a few seconds before proceeding
+
 		// Verify the tenant is gone (this should fail with an error)
-		_, err = client.GetTenantKubeConfig(ctx, testTenantName)
+		kubeconfigResponse, err = client.GetTenantKubeConfig(ctx, testTenantName)
 		require.Error(t, err, "Getting deleted tenant should return an error")
 		t.Logf("Confirmed tenant %s no longer exists", testTenantName)
 	})

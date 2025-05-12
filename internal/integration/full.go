@@ -16,12 +16,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-// generateTestVMID creates a test VM ID that's unlikely to conflict with existing VMs
-func generateTestVMID() int {
-	timestamp := time.Now().Unix()
-	return 900_000 + int(timestamp%10000) // VM ID in range 900000-909999
-}
-
 // TestKamajiProxmoxIntegration tests the full flow of:
 // 1. Creating a Kubernetes tenant with Kamaji
 // 2. Getting join token and configuration
@@ -87,7 +81,7 @@ func TestKamajiProxmoxIntegration(t *testing.T) {
 		testReplicas := 2
 
 		// Generate a test VM ID
-		testVMID := generateTestVMID()
+		testVMID := testhelp.GenerateTestVMID()
 		vmName := fmt.Sprintf("worker-node-%d", testVMID)
 
 		// Create the Kubernetes tenant control plane

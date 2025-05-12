@@ -36,10 +36,11 @@ type Agent struct {
 }
 
 // New creates a new agent
-func New(cli *Clients, pollInterval, metricInterval time.Duration) (*Agent, error) {
+func New(cli *Clients, templateID int, pollInterval, metricInterval time.Duration) (*Agent, error) {
 	jobHandler := NewJobHandler(
 		cli.Fulcrum,
 		cli.Proxmox,
+		templateID,
 		cli.Kamaji,
 		cli.SSH,
 	)

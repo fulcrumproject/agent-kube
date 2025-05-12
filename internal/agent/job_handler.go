@@ -9,6 +9,7 @@ import (
 
 // JobHandler processes jobs from the Fulcrum Core job queue
 type JobHandler struct {
+	templateID int
 	fulcrumCli FulcrumClient
 	proxmoxCli ProxmoxClient
 	kamajiCli  KamajiClient
@@ -25,6 +26,7 @@ type JobResponse struct {
 func NewJobHandler(
 	fulcrumCli FulcrumClient,
 	proxmoxCli ProxmoxClient,
+	templateID int,
 	kamajiCli KamajiClient,
 	sshCli SSHClient,
 ) *JobHandler {
@@ -114,7 +116,7 @@ func (h *JobHandler) handleServiceCreate(job *Job) (*JobResponse, error) {
 	log.Printf("Creating tenant control plane: %s", tenantName)
 
 	// Create tenant control plane
-	err := h.kamajiCli.CreateTenantControlPlane(ctx, tenantName, "v1.30.0", 1)
+	err := h.kamajiCli.CreateTenantControlPlane(ctx, tenantName, "v1.30.2", 1)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tenant control plane: %w", err)
 	}
@@ -124,6 +126,9 @@ func (h *JobHandler) handleServiceCreate(job *Job) (*JobResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tenant control plane failed to initialize: %w", err)
 	}
+
+	// TODO should be a better way to check if the tenant is ready
+	time.Sleep(30 * time.Second)
 
 	// Get tenant client
 	tenantClient, err := h.kamajiCli.GetTenantClient(ctx, tenantName)
@@ -387,7 +392,7 @@ func (h *JobHandler) createVM(_ context.Context, serviceName string, node Node) 
 	cores, memory := node.Size.Attrs()
 
 	// Create VM by cloning from template
-	t, err := h.proxmoxCli.CloneVM(100, vmID, vmName) // Assume 100 is template ID
+	t, err := h.proxmoxCli.CloneVM(h.templateID, vmID, vmName) // Assume 100 is template ID
 	if err != nil {
 		return 0, fmt.Errorf("failed to clone VM: %w", err)
 	}
