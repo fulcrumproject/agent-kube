@@ -74,8 +74,9 @@ func TestKamajiClientIntegration(t *testing.T) {
 		require.Contains(t, caHash, "sha256:", "CA hash should be in the format 'sha256:[hash]'")
 		t.Logf("Tenant CA hash retrieved successfully: %s", caHash)
 
-		// TODO should be a better way to check if the tenant is ready
-		time.Sleep(10 * time.Second) // Wait for a few seconds before proceeding
+		// Wait for tenant control plane to be ready
+		err = client.WaitForTenantControlPlaneReady(ctx, testTenantName)
+		require.NoError(t, err, "WaitForTenantControlPlaneReady should not return an error")
 
 		// Get the tenant client
 		t.Logf("Getting tenant client for: %s", testTenantName)

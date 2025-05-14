@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"fulcrumproject.org/kube-agent/internal/cloudinit"
 	"fulcrumproject.org/kube-agent/internal/config"
 	"fulcrumproject.org/kube-agent/internal/httpcli"
 	"fulcrumproject.org/kube-agent/internal/kamaji"
@@ -214,7 +215,7 @@ func TestKamajiProxmoxIntegration(t *testing.T) {
 		apiServerEndpoint := kubeConfig.Endpoint
 
 		// Generate cloud-init configuration for joining the cluster
-		cloudInitParams := proxmox.CloudInitParams{
+		cloudInitParams := cloudinit.CloudInitParams{
 			Hostname:       vmName,
 			FQDN:           vmName,
 			Username:       "ubuntu",
@@ -229,7 +230,7 @@ func TestKamajiProxmoxIntegration(t *testing.T) {
 		}
 
 		// Generate the cloud-init file content
-		cloudInitContent, err := proxmox.GenerateCloudInit(proxmox.CloudInitTempl, cloudInitParams)
+		cloudInitContent, err := cloudinit.GenerateCloudInit(cloudinit.CloudInitTempl, cloudInitParams)
 		require.NoError(t, err, "GenerateCloudInit should not return an error")
 
 		// Upload cloud-init file via SCP

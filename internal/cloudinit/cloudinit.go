@@ -1,4 +1,4 @@
-package proxmox
+package cloudinit
 
 import (
 	"bytes"

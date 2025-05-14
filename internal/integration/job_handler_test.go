@@ -71,7 +71,7 @@ func TestJobHandler(t *testing.T) {
 	require.NoError(t, err, "Failed to create SSH client")
 	require.NotNil(t, sshCli, "SSH client should not be nil")
 
-	jobHandler := agent.NewJobHandler(fulcrumCli, proxmoxCli, cfg.ProxmoxTemplate, kamajiCli, sshCli)
+	jobHandler := agent.NewJobHandler(fulcrumCli, proxmoxCli, cfg.ProxmoxTemplate, cfg.ProxmoxCIPath, kamajiCli, sshCli)
 
 	// This test verifies the complete lifecycle of a Kubernetes cluster service by:
 	// 1. Creating a cluster with one node (node1)
@@ -129,7 +129,7 @@ func TestJobHandler(t *testing.T) {
 
 		expectedCores, expectedMemory := agent.NodeSizeS1.Attrs()
 		require.Equal(t, expectedCores, vm.CPUCount)
-		require.Equal(t, expectedMemory, vm.MaxMemory)
+		require.Equal(t, 1048576*int64(expectedMemory), vm.MaxMemory)
 
 		// Job 2: Start the cluster service
 		err = fulcrumCli.StartService(serviceID)
@@ -189,7 +189,7 @@ func TestJobHandler(t *testing.T) {
 		// Verify node2 has correct configuration
 		expectedCores2, expectedMemory2 := agent.NodeSizeS2.Attrs()
 		require.Equal(t, expectedCores2, vm2.CPUCount)
-		require.Equal(t, expectedMemory2, vm2.MaxMemory)
+		require.Equal(t, 1048576*int64(expectedMemory2), vm2.MaxMemory)
 
 		// Job 4: Update the cluster service making node2 off
 		nodeList := service.CurrentProperties.Nodes

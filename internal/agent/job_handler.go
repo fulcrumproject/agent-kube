@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"fulcrumproject.org/kube-agent/internal/cloudinit"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 // JobHandler processes jobs from the Fulcrum Core job queue
 type JobHandler struct {
 	templateID int
+	ciPath     string
 	fulcrumCli FulcrumClient
 	proxmoxCli ProxmoxClient
 	kamajiCli  KamajiClient
@@ -27,10 +31,13 @@ func NewJobHandler(
 	fulcrumCli FulcrumClient,
 	proxmoxCli ProxmoxClient,
 	templateID int,
+	ciPath string,
 	kamajiCli KamajiClient,
 	sshCli SSHClient,
 ) *JobHandler {
 	return &JobHandler{
+		templateID: templateID,
+		ciPath:     ciPath,
 		fulcrumCli: fulcrumCli,
 		proxmoxCli: proxmoxCli,
 		kamajiCli:  kamajiCli,
@@ -126,9 +133,6 @@ func (h *JobHandler) handleServiceCreate(job *Job) (*JobResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tenant control plane failed to initialize: %w", err)
 	}
-
-	// TODO should be a better way to check if the tenant is ready
-	time.Sleep(30 * time.Second)
 
 	// Get tenant client
 	tenantClient, err := h.kamajiCli.GetTenantClient(ctx, tenantName)
@@ -264,7 +268,8 @@ func (h *JobHandler) handleServiceUpdate(job *Job, startStop bool) (*JobResponse
 				return nil, fmt.Errorf("failed to delete node %s: %w", currentNode.ID, err)
 			}
 			// Delete the node from Kubernetes
-			if err := tenantClient.DeleteWorkerNode(ctx, currentNode.ID); err != nil {
+
+			if err := tenantClient.DeleteWorkerNode(ctx, vmName(job.Service.Name, currentNode.ID)); err != nil {
 				return nil, fmt.Errorf("failed to delete worker node %s: %w", currentNode.ID, err)
 			}
 			// Remove from resources
@@ -276,7 +281,7 @@ func (h *JobHandler) handleServiceUpdate(job *Job, startStop bool) (*JobResponse
 	for _, currentNode := range nodesToStart {
 		if vmID, ok := resp.Resources.Nodes[currentNode.ID]; ok {
 			// Start the VM
-			err := h.startVM(vmID)
+			err := h.startVMAndWaitJoin(vmID, job.Service.Name, currentNode.ID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to start node %s: %w", currentNode.ID, err)
 			}
@@ -298,10 +303,12 @@ func (h *JobHandler) handleServiceUpdate(job *Job, startStop bool) (*JobResponse
 func (h *JobHandler) handleServiceStart(job *Job) (*JobResponse, error) {
 	err := iterateCurrNodes(job, func(node Node, vmID int) error {
 		if node.State == NodeStateOn {
-			err := h.startVM(vmID)
+			err := h.startVMAndWaitJoin(vmID, job.Service.Name, node.ID)
 			if err != nil {
 				return fmt.Errorf("failed to start node %s: %w", node.ID, err)
 			}
+			return nil
+
 		}
 		return nil
 	})
@@ -384,8 +391,8 @@ func iterateCurrNodes(job *Job, callback func(node Node, vmID int) error) error 
 }
 
 // createVM creates a new node for a service
-func (h *JobHandler) createVM(_ context.Context, serviceName string, node Node) (int, error) {
-	vmName := fmt.Sprintf("%s-node-%s", serviceName, node.ID)
+func (h *JobHandler) createVM(ctx context.Context, serviceName string, node Node) (int, error) {
+	vmName := vmName(serviceName, node.ID)
 	vmID := h.generateVMID(serviceName, node.ID)
 
 	// Get node configuration based on size
@@ -397,13 +404,67 @@ func (h *JobHandler) createVM(_ context.Context, serviceName string, node Node) 
 		return 0, fmt.Errorf("failed to clone VM: %w", err)
 	}
 
-	_, err = h.proxmoxCli.WaitForTask(t.TaskID, 1*time.Minute)
+	_, err = h.proxmoxCli.WaitForTask(t.TaskID, 10*time.Minute)
 	if err != nil {
 		return 0, fmt.Errorf("failed to clone VM: %w", err)
 	}
 
-	// Configure VM
-	t, err = h.proxmoxCli.ConfigureVM(vmID, cores, memory, "")
+	// Generate join token for the node to join the cluster
+	tenantClient, err := h.kamajiCli.GetTenantClient(ctx, serviceName)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get tenant client: %w", err)
+	}
+
+	joinToken, err := tenantClient.CreateJoinToken(ctx, serviceName, 24) // 24 hours validity
+	if err != nil {
+		return 0, fmt.Errorf("failed to create join token: %w", err)
+	}
+
+	// Get CA cert hash for the cluster
+	caCertHash, err := h.kamajiCli.GetTenantCAHash(ctx, serviceName)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get CA cert hash: %w", err)
+	}
+
+	// Get kubeconfig for the cluster
+	kubeConfig, err := h.kamajiCli.GetTenantKubeConfig(ctx, serviceName)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get kubeconfig: %w", err)
+	}
+
+	// Generate cloud-init configuration
+	cloudInitParams := cloudinit.CloudInitParams{
+		Hostname:       vmName,
+		FQDN:           vmName,
+		Username:       "ubuntu",
+		Password:       "ubuntu",
+		SSHKeys:        []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBeZfPGgiVw7zMpOhs7RQMCL3+jxfA8U1iiGSiYDSXWy kube@testudo"},
+		ExpirePassword: false,
+		PackageUpgrade: true,
+		JoinURL:        kubeConfig.Endpoint,
+		JoinToken:      joinToken.FullToken,
+		CACertHash:     caCertHash,
+		KubeVersion:    "v1.30.2",
+	}
+
+	// Generate cloud-init config
+	cloudInitContent, err := cloudinit.GenerateCloudInit(cloudinit.CloudInitTempl, cloudInitParams)
+	if err != nil {
+		return 0, fmt.Errorf("failed to generate cloud-init configuration: %w", err)
+	}
+
+	cloudInitFileName := fmt.Sprintf("kube-agent-ci-%s.yml", vmName)
+	cloudInitFilePath := fmt.Sprintf("%s/%s", h.ciPath, cloudInitFileName)
+
+	// Upload cloud-init config to Proxmox host via SSH - use appropriate path/filename
+	err = h.sshCli.Copy(cloudInitContent, cloudInitFilePath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to copy cloud-init configuration: %w", err)
+	}
+
+	// Configure VM with cloud-init config
+	cloudInitConfig := fmt.Sprintf("user=local:snippets/%s", cloudInitFileName)
+	t, err = h.proxmoxCli.ConfigureVM(vmID, cores, memory, cloudInitConfig)
 	if err != nil {
 		return 0, fmt.Errorf("failed to configure VM: %w", err)
 	}
@@ -414,6 +475,20 @@ func (h *JobHandler) createVM(_ context.Context, serviceName string, node Node) 
 	}
 
 	return vmID, nil
+}
+
+// startVM starts a node
+func (h *JobHandler) startVMAndWaitJoin(vmID int, serviceName, nodeName string) error {
+	err := h.startVM(vmID)
+	if err != nil {
+		return err
+	}
+	vmName := vmName(serviceName, nodeName)
+	err = h.waitJoin(serviceName, vmName)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // startVM starts a node
@@ -438,6 +513,33 @@ func (h *JobHandler) startVM(vmID int) error {
 		return fmt.Errorf("failed to start VM: %w", err)
 	}
 
+	return nil
+}
+
+func (h *JobHandler) waitJoin(serviceName, nodeName string) error {
+	ctx := context.Background()
+
+	tenantClient, err := h.kamajiCli.GetTenantClient(ctx, serviceName)
+	if err != nil {
+		return fmt.Errorf("failed to get tenant client: %w", err)
+	}
+
+	// Wait for node to join
+	err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
+		nodeStatus, err := tenantClient.GetNodeStatus(ctx, nodeName)
+		if err != nil {
+			return false, nil // Node not found, continue polling
+		}
+		if !nodeStatus.Ready {
+			return false, nil // If the node is found but not ready, continue waiting
+		}
+		// Node is registered and ready
+		return true, nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("node failed to join: %w", err)
+	}
 	return nil
 }
 
@@ -497,4 +599,8 @@ func (h *JobHandler) generateVMID(serviceName string, nodeID string) int {
 		hash = (hash*31 + int(c)) % 9000
 	}
 	return hash + 1000
+}
+
+func vmName(serviceName, nodeID string) string {
+	return fmt.Sprintf("%s-node-%s", serviceName, nodeID)
 }

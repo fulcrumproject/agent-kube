@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"fulcrumproject.org/kube-agent/internal/cloudinit"
 	"fulcrumproject.org/kube-agent/internal/config"
 	"fulcrumproject.org/kube-agent/internal/httpcli"
 	"fulcrumproject.org/kube-agent/internal/ssh"
@@ -71,7 +72,7 @@ func TestVMIntegration(t *testing.T) {
 
 		// 2. Generate and upload cloud-init configuration
 		t.Logf("Generating and uploading cloud-init configuration")
-		cloudInitParams := CloudInitParams{
+		cloudInitParams := cloudinit.CloudInitParams{
 			Hostname:       vmName,
 			FQDN:           vmName,
 			Username:       "ubuntu",
@@ -86,7 +87,7 @@ func TestVMIntegration(t *testing.T) {
 		}
 
 		// Generate cloud-init file
-		cloudInitContent, err := GenerateCloudInit(CloudInitTestTempl, cloudInitParams)
+		cloudInitContent, err := cloudinit.GenerateCloudInit(cloudinit.CloudInitTestTempl, cloudInitParams)
 		require.NoError(t, err, "GenerateCloudInitFile should not return an error")
 
 		// Upload cloud-init file via SCP

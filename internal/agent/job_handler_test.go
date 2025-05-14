@@ -17,7 +17,7 @@ func TestJobHandler(t *testing.T) {
 
 	kamajiCli := NewMockKamajiClient()
 	sshCli := NewMockSSHClient()
-	jobHandler := NewJobHandler(fulcrumCli, proxmoxCli, 100, kamajiCli, sshCli)
+	jobHandler := NewJobHandler(fulcrumCli, proxmoxCli, 100, "path", kamajiCli, sshCli)
 
 	// This test verifies the complete lifecycle of a Kubernetes cluster service by:
 	// 1. Creating a cluster with one node (node1)

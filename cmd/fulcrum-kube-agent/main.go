@@ -42,7 +42,7 @@ func main() {
 	defer clients.Close()
 
 	// Create and start the agent with all required clients
-	testAgent, err := agent.New(clients, cfg.ProxmoxTemplate, cfg.JobPollInterval, cfg.MetricReportInterval)
+	testAgent, err := agent.New(clients, cfg.ProxmoxTemplate, cfg.ProxmoxCIPath, cfg.JobPollInterval, cfg.MetricReportInterval)
 	if err != nil {
 		log.Fatalf("Failed to create agent: %v", err)
 	}

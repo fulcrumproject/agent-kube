@@ -241,6 +241,33 @@ func (c *Client) WaitForTenantControlPlaneReady(ctx context.Context, name string
 	if err != nil {
 		return fmt.Errorf("failed to wait for tenant control plane to be ready: %w", err)
 	}
+
+	// Check if kubernetes-admin has the necessary permissions
+	tenantClient, err := c.getTenantClient(ctx, name)
+	if err != nil {
+		return fmt.Errorf("failed to get tenant client: %w", err)
+	}
+
+	err = wait.PollUntilContextTimeout(ctx, PollInterval, DefaultTimeout, true, func(ctx context.Context) (bool, error) {
+		// Try to list PodDisruptionBudgets in the kube-system namespace
+		// This will check if we have permissions without actually creating anything
+		_, err := tenantClient.clientset.PolicyV1().PodDisruptionBudgets("kube-system").List(ctx, metav1.ListOptions{})
+		if err != nil {
+			// If we get a permission error, it might be temporary during cluster initialization
+			if strings.Contains(err.Error(), "forbidden") || strings.Contains(err.Error(), "unauthorized") {
+				return false, nil // Continue polling, don't fail immediately
+			}
+			// For other errors, return them directly
+			return false, fmt.Errorf("error checking PDB permissions: %w", err)
+		}
+
+		// If we can list PDBs, we have the necessary permissions
+		return true, nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to wait for tenant control plane to be ready: %w", err)
+	}
+
 	return nil
 }
 
@@ -369,6 +396,10 @@ func (c *Client) getTenantControlPlane(_ context.Context, name string) (*TCPResp
 
 // GetTenantClient gets a subcluster client for the given tenant
 func (c *Client) GetTenantClient(ctx context.Context, name string) (agent.KamajiTenantClient, error) {
+	return c.getTenantClient(ctx, name)
+}
+
+func (c *Client) getTenantClient(ctx context.Context, name string) (*TenantClient, error) {
 	// Get the kubeconfig to access the tenant cluster
 	kubeconfigResp, err := c.GetTenantKubeConfig(ctx, name)
 	if err != nil {
@@ -393,7 +424,7 @@ func (c *Client) GetTenantClient(ctx context.Context, name string) (agent.Kamaji
 type TenantClient struct {
 	tenantName    string
 	tenantConfig  *rest.Config
-	tenantClient  kubernetes.Interface
+	clientset     kubernetes.Interface
 	dynamicClient *dynamic.DynamicClient
 	restMapper    *restmapper.DeferredDiscoveryRESTMapper
 }
@@ -419,7 +450,7 @@ func NewTenantClient(tenantName string, tenantConfig *rest.Config) (*TenantClien
 	return &TenantClient{
 		tenantName:    tenantName,
 		tenantConfig:  tenantConfig,
-		tenantClient:  clientset,
+		clientset:     clientset,
 		dynamicClient: dynamicClient,
 		restMapper:    mapper,
 	}, nil
@@ -439,7 +470,7 @@ func (t *TenantClient) CreateJoinToken(ctx context.Context, tenantName string, v
 	expirationTime := time.Now().Add(time.Duration(validityHours) * time.Hour)
 
 	// Create the bootstrap token secret
-	_, err := createBootstrapTokenSecret(t.tenantClient, tokenID, tokenSecret, expirationTime)
+	_, err := createBootstrapTokenSecret(t.clientset, tokenID, tokenSecret, expirationTime)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create bootstrap token: %w", err)
 	}
@@ -496,7 +527,7 @@ func createBootstrapTokenSecret(clientset kubernetes.Interface, tokenID, tokenSe
 // DeleteWorkerNode deletes a worker node from the tenant cluster
 func (t *TenantClient) DeleteWorkerNode(ctx context.Context, nodeName string) error {
 	// Delete the node from the Kubernetes cluster
-	err := t.tenantClient.CoreV1().Nodes().Delete(
+	err := t.clientset.CoreV1().Nodes().Delete(
 		context.Background(),
 		nodeName,
 		metav1.DeleteOptions{},
@@ -512,7 +543,7 @@ func (t *TenantClient) DeleteWorkerNode(ctx context.Context, nodeName string) er
 // GetNodeStatus retrieves the status of a node in the tenant cluster
 func (t *TenantClient) GetNodeStatus(ctx context.Context, nodeName string) (*agent.NodeStatus, error) {
 	// Get the node from the Kubernetes API
-	node, err := t.tenantClient.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	node, err := t.clientset.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node %s: %w", nodeName, err)
 	}
