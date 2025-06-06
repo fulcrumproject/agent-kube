@@ -25,7 +25,7 @@ func NewFulcrumClient(baseURL string, token string, options ...httpcli.ClientOpt
 // UpdateAgentStatus updates the agent's status in Fulcrum Core
 func (c *HTTPFulcrumClient) UpdateAgentStatus(status string) error {
 	reqBody, err := json.Marshal(map[string]any{
-		"state": status,
+		"status": status,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to marshal status update request: %w", err)

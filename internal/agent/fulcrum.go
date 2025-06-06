@@ -1,19 +1,19 @@
 package agent
 
-// ServiceState represents the possible states of a service
-type ServiceState string
+// ServiceStatus represents the possible statuss of a service
+type ServiceStatus string
 
 const (
-	ServiceCreating     ServiceState = "Creating"
-	ServiceCreated      ServiceState = "Created"
-	ServiceStarting     ServiceState = "Starting"
-	ServiceStarted      ServiceState = "Started"
-	ServiceStopping     ServiceState = "Stopping"
-	ServiceStopped      ServiceState = "Stopped"
-	ServiceHotUpdating  ServiceState = "HotUpdating"
-	ServiceColdUpdating ServiceState = "ColdUpdating"
-	ServiceDeleting     ServiceState = "Deleting"
-	ServiceDeleted      ServiceState = "Deleted"
+	ServiceCreating     ServiceStatus = "Creating"
+	ServiceCreated      ServiceStatus = "Created"
+	ServiceStarting     ServiceStatus = "Starting"
+	ServiceStarted      ServiceStatus = "Started"
+	ServiceStopping     ServiceStatus = "Stopping"
+	ServiceStopped      ServiceStatus = "Stopped"
+	ServiceHotUpdating  ServiceStatus = "HotUpdating"
+	ServiceColdUpdating ServiceStatus = "ColdUpdating"
+	ServiceDeleting     ServiceStatus = "Deleting"
+	ServiceDeleted      ServiceStatus = "Deleted"
 )
 
 // JobAction represents the type of job
@@ -28,22 +28,22 @@ const (
 	JobActionServiceDelete     JobAction = "ServiceDelete"
 )
 
-// JobState represents the state of a job
-type JobState string
+// JobStatus represents the status of a job
+type JobStatus string
 
 const (
-	JobStatePending    JobState = "Pending"
-	JobStateProcessing JobState = "Processing"
-	JobStateCompleted  JobState = "Completed"
-	JobStateFailed     JobState = "Failed"
+	JobStatusPending    JobStatus = "Pending"
+	JobStatusProcessing JobStatus = "Processing"
+	JobStatusCompleted  JobStatus = "Completed"
+	JobStatusFailed     JobStatus = "Failed"
 )
 
-// NodeState
-type NodeState string
+// NodeStatus
+type NodeStatus string
 
 const (
-	NodeStateOn  NodeState = "On"
-	NodeStateOff NodeState = "Off"
+	NodeStatusOn  NodeStatus = "On"
+	NodeStatusOff NodeStatus = "Off"
 )
 
 // NodeSize
@@ -69,9 +69,9 @@ func (size NodeSize) Attrs() (cores int, memory int) {
 }
 
 type Node struct {
-	ID    string    `json:"id"`
-	Size  NodeSize  `json:"size"`
-	State NodeState `json:"state"`
+	ID     string     `json:"id"`
+	Size   NodeSize   `json:"size"`
+	Status NodeStatus `json:"status"`
 }
 
 // Resources represents the resources in a job response
@@ -86,21 +86,21 @@ type Properties struct {
 	Nodes []Node `json:"nodes"`
 }
 type Service struct {
-	ID                string        `json:"id"`
-	Name              string        `json:"name"`
-	ExternalID        *string       `json:"externalId"`
-	CurrentProperties *Properties   `json:"currentProperties"`
-	TargetProperties  *Properties   `json:"targetProperties"`
-	Resources         *Resources    `json:"resources"`
-	CurrentState      ServiceState  `json:"currentState"`
-	TargetState       *ServiceState `json:"targetState"`
+	ID                string         `json:"id"`
+	Name              string         `json:"name"`
+	ExternalID        *string        `json:"externalId"`
+	CurrentProperties *Properties    `json:"currentProperties"`
+	TargetProperties  *Properties    `json:"targetProperties"`
+	Resources         *Resources     `json:"resources"`
+	CurrentStatus     ServiceStatus  `json:"currentStatus"`
+	TargetStatus      *ServiceStatus `json:"targetStatus"`
 }
 
 // Job represents a job from the Fulcrum Core job queue
 type Job struct {
 	ID           string    `json:"id"`
 	Action       JobAction `json:"action"`
-	State        JobState  `json:"state"`
+	Status       JobStatus `json:"status"`
 	Priority     int       `json:"priority"`
 	Service      Service   `json:"service"`
 	ErrorMessage string    `json:"errorMessage"`

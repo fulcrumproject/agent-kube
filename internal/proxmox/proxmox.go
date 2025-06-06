@@ -183,7 +183,7 @@ func (c *HTTPProxmoxClient) GetVMInfo(vmID int) (*agent.VMInfo, error) {
 
 	return &agent.VMInfo{
 		Name:      statusResp.Data.Name,
-		State:     statusResp.Data.State,
+		Status:    statusResp.Data.Status,
 		VMID:      statusResp.Data.VMID,
 		NodeName:  c.nodeName,
 		CPU:       statusResp.Data.CPU,

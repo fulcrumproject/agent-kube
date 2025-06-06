@@ -82,7 +82,7 @@ func (c *MockFulcrumClient) GetPendingJobs() ([]*Job, error) {
 
 	// Iterate over the jobs and find those that are pending
 	for _, j := range c.jobs {
-		if j.State == JobStatePending {
+		if j.Status == JobStatusPending {
 			pendingJobs = append(pendingJobs, j)
 		}
 	}
@@ -92,25 +92,25 @@ func (c *MockFulcrumClient) GetPendingJobs() ([]*Job, error) {
 
 // PullCompletedJobs returns all completed jobs
 func (c *MockFulcrumClient) PullCompletedJobs() []*Job {
-	return c.PullJobs(JobStateCompleted)
+	return c.PullJobs(JobStatusCompleted)
 }
 
 // PullFailedJobs returns all failed jobs
 func (c *MockFulcrumClient) PullFailedJobs() []*Job {
-	return c.PullJobs(JobStateFailed)
+	return c.PullJobs(JobStatusFailed)
 }
 
-// GetFailedJobs returns jobs by state and removes them from the queue
-func (c *MockFulcrumClient) PullJobs(state JobState) []*Job {
+// GetFailedJobs returns jobs by status and removes them from the queue
+func (c *MockFulcrumClient) PullJobs(status JobStatus) []*Job {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	// Create a slice to hold the jobs
 	var jobs []*Job
 
-	// Iterate over the jobs and find those that match the state
+	// Iterate over the jobs and find those that match the status
 	for i, j := range c.jobs {
-		if c.jobs[i].State == state {
+		if c.jobs[i].Status == status {
 			jobs = append(jobs, j)
 			// Remove job from the queue
 			delete(c.jobMap, c.jobs[i].ID)
@@ -136,12 +136,12 @@ func (c *MockFulcrumClient) ClaimJob(jobID string) error {
 	job := c.jobs[idx]
 
 	// Check if job is already claimed/not pending
-	if job.State != JobStatePending {
-		return fmt.Errorf("job with ID %s is not in pending state", jobID)
+	if job.Status != JobStatusPending {
+		return fmt.Errorf("job with ID %s is not in pending status", jobID)
 	}
 
-	// Mark as claimed by updating its state
-	job.State = JobStateProcessing
+	// Mark as claimed by updating its status
+	job.Status = JobStatusProcessing
 
 	return nil
 }
@@ -160,9 +160,9 @@ func (c *MockFulcrumClient) CompleteJob(jobID string, response JobResponse) erro
 	// Get the job
 	job := c.jobs[idx]
 
-	// Check if job is in the correct state
-	if job.State != JobStateProcessing {
-		return fmt.Errorf("job with ID %s is not in processing state", jobID)
+	// Check if job is in the correct status
+	if job.Status != JobStatusProcessing {
+		return fmt.Errorf("job with ID %s is not in processing status", jobID)
 	}
 
 	// Get the service from the job (this fixes the key issue)
@@ -171,9 +171,9 @@ func (c *MockFulcrumClient) CompleteJob(jobID string, response JobResponse) erro
 	// Update the service with the response
 	service.Resources = response.Resources
 
-	// Update the service state
-	service.CurrentState = *service.TargetState
-	service.TargetState = nil
+	// Update the service status
+	service.CurrentStatus = *service.TargetStatus
+	service.TargetStatus = nil
 
 	// Only update CurrentProperties if TargetProperties is not nil
 	// This preserves CurrentProperties for actions like start/stop that don't modify properties
@@ -186,7 +186,7 @@ func (c *MockFulcrumClient) CompleteJob(jobID string, response JobResponse) erro
 	c.service[service.ID] = service
 
 	// Mark job as completed
-	job.State = JobStateCompleted
+	job.Status = JobStatusCompleted
 
 	return nil
 }
@@ -205,13 +205,13 @@ func (c *MockFulcrumClient) FailJob(jobID string, errorMessage string) error {
 	// Get the job
 	job := c.jobs[idx]
 
-	// Check if job is in the correct state
-	if job.State != JobStateProcessing {
-		return fmt.Errorf("job with ID %s is not in processing state", jobID)
+	// Check if job is in the correct status
+	if job.Status != JobStatusProcessing {
+		return fmt.Errorf("job with ID %s is not in processing status", jobID)
 	}
 
 	// Mark job as failed and store error message
-	job.State = JobStateFailed
+	job.Status = JobStatusFailed
 	job.ErrorMessage = errorMessage
 
 	return nil
@@ -232,8 +232,8 @@ func (c *MockFulcrumClient) CreateService(id, name string, externalID *string, t
 		return fmt.Errorf("service with ID %s already exists", id)
 	}
 
-	targetState := ServiceCreated
-	currentState := ServiceCreating
+	targetStatus := ServiceCreated
+	currentStatus := ServiceCreating
 
 	// Create the service
 	service := Service{
@@ -243,8 +243,8 @@ func (c *MockFulcrumClient) CreateService(id, name string, externalID *string, t
 		CurrentProperties: nil, // Initially no current properties
 		TargetProperties:  targetProperties,
 		Resources:         nil,
-		CurrentState:      currentState,
-		TargetState:       &targetState,
+		CurrentStatus:     currentStatus,
+		TargetStatus:      &targetStatus,
 	}
 
 	// Store the service
@@ -259,7 +259,7 @@ func (c *MockFulcrumClient) CreateService(id, name string, externalID *string, t
 	job := &Job{
 		ID:       fmt.Sprintf("job-%s-create-%d", id, time.Now().UnixNano()),
 		Action:   JobActionServiceCreate,
-		State:    JobStatePending,
+		Status:   JobStatusPending,
 		Priority: 1,
 		Service:  service,
 	}
@@ -278,14 +278,14 @@ func (c *MockFulcrumClient) StartService(id string) error {
 		return fmt.Errorf("service with ID %s not found", id)
 	}
 
-	if service.CurrentState != ServiceCreated && service.CurrentState != ServiceStopped {
+	if service.CurrentStatus != ServiceCreated && service.CurrentStatus != ServiceStopped {
 		return fmt.Errorf("service with ID %s must be created or stopped before starting", id)
 	}
 
-	// Update state
-	service.CurrentState = ServiceStarting
-	targetState := ServiceStarted
-	service.TargetState = &targetState
+	// Update status
+	service.CurrentStatus = ServiceStarting
+	targetStatus := ServiceStarted
+	service.TargetStatus = &targetStatus
 
 	c.service[id] = service
 
@@ -293,7 +293,7 @@ func (c *MockFulcrumClient) StartService(id string) error {
 	job := &Job{
 		ID:       fmt.Sprintf("job-%s-start-%d", id, time.Now().UnixNano()),
 		Action:   JobActionServiceStart,
-		State:    JobStatePending,
+		Status:   JobStatusPending,
 		Priority: 1,
 		Service:  service,
 	}
@@ -312,14 +312,14 @@ func (c *MockFulcrumClient) StopService(id string) error {
 		return fmt.Errorf("service with ID %s not found", id)
 	}
 
-	if service.CurrentState != ServiceStarted {
+	if service.CurrentStatus != ServiceStarted {
 		return fmt.Errorf("service with ID %s must be started before stopping", id)
 	}
 
-	// Update state
-	service.CurrentState = ServiceStopping
-	targetState := ServiceStopped
-	service.TargetState = &targetState
+	// Update status
+	service.CurrentStatus = ServiceStopping
+	targetStatus := ServiceStopped
+	service.TargetStatus = &targetStatus
 
 	c.service[id] = service
 
@@ -327,7 +327,7 @@ func (c *MockFulcrumClient) StopService(id string) error {
 	job := &Job{
 		ID:       fmt.Sprintf("job-%s-stop-%d", id, time.Now().UnixNano()),
 		Action:   JobActionServiceStop,
-		State:    JobStatePending,
+		Status:   JobStatusPending,
 		Priority: 1,
 		Service:  service,
 	}
@@ -351,16 +351,16 @@ func (c *MockFulcrumClient) UpdateService(id string, targetProperties *Propertie
 
 	var jobAction JobAction
 
-	// Update current state based on the operation
-	if service.CurrentState == ServiceStarted {
-		service.CurrentState = ServiceHotUpdating
-		targetState := ServiceStarted
-		service.TargetState = &targetState
+	// Update current status based on the operation
+	if service.CurrentStatus == ServiceStarted {
+		service.CurrentStatus = ServiceHotUpdating
+		targetStatus := ServiceStarted
+		service.TargetStatus = &targetStatus
 		jobAction = JobActionServiceHotUpdate
-	} else if service.CurrentState == ServiceStopped {
-		service.CurrentState = ServiceColdUpdating
-		targetState := ServiceStopped
-		service.TargetState = &targetState
+	} else if service.CurrentStatus == ServiceStopped {
+		service.CurrentStatus = ServiceColdUpdating
+		targetStatus := ServiceStopped
+		service.TargetStatus = &targetStatus
 		jobAction = JobActionServiceColdUpdate
 	} else {
 		return fmt.Errorf("service with ID %s must be started or stopped before updating", id)
@@ -372,7 +372,7 @@ func (c *MockFulcrumClient) UpdateService(id string, targetProperties *Propertie
 	job := &Job{
 		ID:       fmt.Sprintf("job-%s-update-%d", id, time.Now().UnixNano()),
 		Action:   jobAction,
-		State:    JobStatePending,
+		Status:   JobStatusPending,
 		Priority: 1,
 		Service:  service,
 	}
@@ -391,21 +391,21 @@ func (c *MockFulcrumClient) DeleteService(id string) error {
 		return fmt.Errorf("service with ID %s not found", id)
 	}
 
-	if service.CurrentState != ServiceStopped {
+	if service.CurrentStatus != ServiceStopped {
 		return fmt.Errorf("service with ID %s must be stopped before deletion", id)
 	}
 
-	// Update state to deleting
-	service.CurrentState = ServiceDeleting
-	targetState := ServiceDeleted
-	service.TargetState = &targetState
+	// Update status to deleting
+	service.CurrentStatus = ServiceDeleting
+	targetStatus := ServiceDeleted
+	service.TargetStatus = &targetStatus
 	c.service[id] = service
 
 	// Create a job for service deletion
 	job := &Job{
 		ID:       fmt.Sprintf("job-%s-delete-%d", id, time.Now().UnixNano()),
 		Action:   JobActionServiceDelete,
-		State:    JobStatePending,
+		Status:   JobStatusPending,
 		Priority: 1,
 		Service:  service,
 	}
@@ -440,7 +440,7 @@ func (c *MockFulcrumClient) GetServiceByExternalID(externalID string) (Service, 
 	service, exists := c.service[serviceID]
 	if !exists {
 		// This should not happen if the maps are properly maintained
-		return Service{}, fmt.Errorf("inconsistent state: service ID %s points to non-existent service", serviceID)
+		return Service{}, fmt.Errorf("inconsistent status: service ID %s points to non-existent service", serviceID)
 	}
 
 	return service, nil

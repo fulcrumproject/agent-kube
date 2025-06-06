@@ -541,7 +541,7 @@ func (t *TenantClient) DeleteWorkerNode(ctx context.Context, nodeName string) er
 }
 
 // GetNodeStatus retrieves the status of a node in the tenant cluster
-func (t *TenantClient) GetNodeStatus(ctx context.Context, nodeName string) (*agent.NodeStatus, error) {
+func (t *TenantClient) GetNodeStatus(ctx context.Context, nodeName string) (*agent.KubeNodeStatus, error) {
 	// Get the node from the Kubernetes API
 	node, err := t.clientset.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
 	if err != nil {
@@ -564,7 +564,7 @@ func (t *TenantClient) GetNodeStatus(ctx context.Context, nodeName string) (*age
 	}
 
 	// Return the node status
-	return &agent.NodeStatus{
+	return &agent.KubeNodeStatus{
 		Name:           node.Name,
 		Ready:          isReady,
 		KubeletVersion: node.Status.NodeInfo.KubeletVersion,

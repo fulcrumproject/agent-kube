@@ -45,39 +45,39 @@ type TaskResponse struct {
 
 // TaskStatus represents the status of a Proxmox task
 type TaskStatus struct {
-	ExitStatus string  `json:"exitstatus"` // Such as 'OK' or 'ERROR'
-	Status     VMState `json:"status"`     // Such as 'stopped' or 'running'
-	Node       string  `json:"node"`       // Node name where the task is running
-	PID        int     `json:"pid"`        // Process ID
-	Type       string  `json:"type"`       // Task type
-	ID         string  `json:"id"`         // Optional ID
-	User       string  `json:"user"`       // User@realm who initiated the task
-	StartTime  int64   `json:"starttime"`  // Start time of the task
-	UpID       string  `json:"upid"`       // Full UPID of the task
+	ExitStatus string   `json:"exitstatus"` // Such as 'OK' or 'ERROR'
+	Status     VMStatus `json:"status"`     // Such as 'stopped' or 'running'
+	Node       string   `json:"node"`       // Node name where the task is running
+	PID        int      `json:"pid"`        // Process ID
+	Type       string   `json:"type"`       // Task type
+	ID         string   `json:"id"`         // Optional ID
+	User       string   `json:"user"`       // User@realm who initiated the task
+	StartTime  int64    `json:"starttime"`  // Start time of the task
+	UpID       string   `json:"upid"`       // Full UPID of the task
 }
 
-type VMState string
+type VMStatus string
 
 const (
-	VMStateRunning VMState = "running"
-	VMStateStopped VMState = "stopped"
-	VMStatePaused  VMState = "paused"
-	VMStateError   VMState = "error"
-	VMStateUnknown VMState = "unknown"
+	VMStatusRunning VMStatus = "running"
+	VMStatusStopped VMStatus = "stopped"
+	VMStatusPaused  VMStatus = "paused"
+	VMStatusError   VMStatus = "error"
+	VMStatusUnknown VMStatus = "unknown"
 )
 
 // VMInfo represents the status of a Proxmox virtual machine
 type VMInfo struct {
-	Name      string  `json:"name"`      // VM name
-	State     VMState `json:"status"`    // Such as 'running' or 'stopped'
-	VMID      int     `json:"vmid"`      // VM ID
-	NodeName  string  `json:"node"`      // Node name where the VM is running
-	CPU       float64 `json:"cpu"`       // Current CPU usage (0-1 range)
-	CPUCount  int     `json:"cpus"`      // Number of CPUs
-	Memory    int64   `json:"mem"`       // Current memory usage in bytes
-	MaxMemory int64   `json:"maxmem"`    // Maximum memory in bytes
-	Disk      int64   `json:"disk"`      // Disk usage in bytes
-	MaxDisk   int64   `json:"maxdisk"`   // Maximum disk size in bytes
-	Uptime    int64   `json:"uptime"`    // Uptime in seconds
-	QMPStatus string  `json:"qmpstatus"` // QEMU Machine Protocol status
+	Name      string   `json:"name"`      // VM name
+	Status    VMStatus `json:"status"`    // Such as 'running' or 'stopped'
+	VMID      int      `json:"vmid"`      // VM ID
+	NodeName  string   `json:"node"`      // Node name where the VM is running
+	CPU       float64  `json:"cpu"`       // Current CPU usage (0-1 range)
+	CPUCount  int      `json:"cpus"`      // Number of CPUs
+	Memory    int64    `json:"mem"`       // Current memory usage in bytes
+	MaxMemory int64    `json:"maxmem"`    // Maximum memory in bytes
+	Disk      int64    `json:"disk"`      // Disk usage in bytes
+	MaxDisk   int64    `json:"maxdisk"`   // Maximum disk size in bytes
+	Uptime    int64    `json:"uptime"`    // Uptime in seconds
+	QMPStatus string   `json:"qmpstatus"` // QEMU Machine Protocol status
 }

@@ -176,7 +176,7 @@ func (h *JobHandler) handleServiceCreate(job *Job) (*JobResponse, error) {
 
 // handleServiceUpdate handles the updates to a service
 // It adds or removes nodes based on the difference between current and target properties
-// VMs will be started or stopped based on their target state if start is true
+// VMs will be started or stopped based on their target status if start is true
 func (h *JobHandler) handleServiceUpdate(job *Job, startStop bool) (*JobResponse, error) {
 	ctx := context.Background()
 	resp := &JobResponse{
@@ -226,7 +226,7 @@ func (h *JobHandler) handleServiceUpdate(job *Job, startStop bool) (*JobResponse
 			nodesToAdd = append(nodesToAdd, targetNode)
 		} else {
 			if startStop {
-				if targetNode.State == NodeStateOn {
+				if targetNode.Status == NodeStatusOn {
 					nodesToStart = append(nodesToStart, targetNode)
 				} else {
 					nodesToStop = append(nodesToStop, targetNode)
@@ -255,7 +255,7 @@ func (h *JobHandler) handleServiceUpdate(job *Job, startStop bool) (*JobResponse
 			return nil, fmt.Errorf("failed to create node %s: %w", targetNode.ID, err)
 		}
 		resp.Resources.Nodes[targetNode.ID] = vmID
-		if startStop && targetNode.State == NodeStateOn {
+		if startStop && targetNode.Status == NodeStatusOn {
 			nodesToStart = append(nodesToStart, targetNode)
 		}
 	}
@@ -302,7 +302,7 @@ func (h *JobHandler) handleServiceUpdate(job *Job, startStop bool) (*JobResponse
 // handleServiceStart starts the cluster service
 func (h *JobHandler) handleServiceStart(job *Job) (*JobResponse, error) {
 	err := iterateCurrNodes(job, func(node Node, vmID int) error {
-		if node.State == NodeStateOn {
+		if node.Status == NodeStatusOn {
 			err := h.startVMAndWaitJoin(vmID, job.Service.Name, node.ID)
 			if err != nil {
 				return fmt.Errorf("failed to start node %s: %w", node.ID, err)
@@ -321,7 +321,7 @@ func (h *JobHandler) handleServiceStart(job *Job) (*JobResponse, error) {
 // handleServiceStop stops the cluster service
 func (h *JobHandler) handleServiceStop(job *Job) (*JobResponse, error) {
 	err := iterateCurrNodes(job, func(node Node, vmID int) error {
-		if node.State == NodeStateOn {
+		if node.Status == NodeStatusOn {
 			err := h.stopVM(vmID)
 			if err != nil {
 				return fmt.Errorf("failed to stop node %s: %w", node.ID, err)
@@ -497,9 +497,9 @@ func (h *JobHandler) startVM(vmID int) error {
 	if err != nil {
 		return fmt.Errorf("failed to get VM info: %w", err)
 	}
-	if i.State == VMStateRunning {
+	if i.Status == VMStatusRunning {
 		return nil
-	} else if i.State != VMStateStopped {
+	} else if i.Status != VMStatusStopped {
 		return fmt.Errorf("VM is not stopped")
 	}
 
@@ -549,9 +549,9 @@ func (h *JobHandler) stopVM(vmID int) error {
 	if err != nil {
 		return fmt.Errorf("failed to get VM info: %w", err)
 	}
-	if i.State == VMStateStopped {
+	if i.Status == VMStatusStopped {
 		return nil
-	} else if i.State != VMStateRunning {
+	} else if i.Status != VMStatusRunning {
 		return fmt.Errorf("VM is not running")
 	}
 

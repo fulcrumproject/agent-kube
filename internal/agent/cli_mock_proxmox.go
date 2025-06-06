@@ -10,7 +10,7 @@ import (
 type VM struct {
 	ID        int
 	Name      string
-	State     VMState
+	Status    VMStatus
 	Cores     int
 	Memory    int
 	CloudInit string
@@ -19,7 +19,7 @@ type VM struct {
 // Task represents a task in the in-memory stub
 type Task struct {
 	ID         string
-	Status     VMState
+	Status     VMStatus
 	ExitStatus string // "OK", "ERROR"
 	StartTime  time.Time
 	Type       string
@@ -47,15 +47,15 @@ func NewMockProxmoxClient(nodeName string) *MockProxmoxClient {
 	}
 }
 
-// AddVM adds a VM to the stub client's state
-func (c *MockProxmoxClient) AddVM(id int, name string, state VMState, cores int, memory int) *VM {
+// AddVM adds a VM to the stub client's status
+func (c *MockProxmoxClient) AddVM(id int, name string, status VMStatus, cores int, memory int) *VM {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	vm := &VM{
 		ID:     id,
 		Name:   name,
-		State:  state,
+		Status: status,
 		Cores:  cores,
 		Memory: memory,
 	}
@@ -64,7 +64,7 @@ func (c *MockProxmoxClient) AddVM(id int, name string, state VMState, cores int,
 	return vm
 }
 
-// GetVM retrieves a VM from the stub client's state
+// GetVM retrieves a VM from the stub client's status
 func (c *MockProxmoxClient) GetVM(id int) (*VM, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -85,7 +85,7 @@ func (c *MockProxmoxClient) createTask(taskType string, vmID int, exitStatus str
 
 	task := &Task{
 		ID:         taskID,
-		Status:     VMStateStopped, // Task is immediately completed
+		Status:     VMStatusStopped, // Task is immediately completed
 		ExitStatus: exitStatus,
 		StartTime:  time.Now(),
 		Type:       taskType,
@@ -121,7 +121,7 @@ func (c *MockProxmoxClient) CloneVM(_ int, newVMID int, name string) (*TaskRespo
 	c.vms[newVMID] = &VM{
 		ID:     newVMID,
 		Name:   name,
-		State:  VMStateStopped,
+		Status: VMStatusStopped,
 		Cores:  2,
 		Memory: 2048,
 	}
@@ -161,12 +161,12 @@ func (c *MockProxmoxClient) StartVM(vmID int) (*TaskResponse, error) {
 		return nil, fmt.Errorf("VM with ID %d not found", vmID)
 	}
 
-	if vm.State == VMStateRunning {
+	if vm.Status == VMStatusRunning {
 		return nil, fmt.Errorf("VM with ID %d is already running", vmID)
 	}
 
 	// Start the VM synchronously
-	vm.State = VMStateRunning
+	vm.Status = VMStatusRunning
 
 	// Create a completed task
 	return c.createTask("qmstart", vmID, "OK"), nil
@@ -182,12 +182,12 @@ func (c *MockProxmoxClient) StopVM(vmID int) (*TaskResponse, error) {
 		return nil, fmt.Errorf("VM with ID %d not found", vmID)
 	}
 
-	if vm.State == VMStateStopped {
+	if vm.Status == VMStatusStopped {
 		return nil, fmt.Errorf("VM with ID %d is already stopped", vmID)
 	}
 
 	// Stop the VM synchronously
-	vm.State = VMStateStopped
+	vm.Status = VMStatusStopped
 
 	// Create a completed task
 	return c.createTask("qmstop", vmID, "OK"), nil
@@ -252,7 +252,7 @@ func (c *MockProxmoxClient) GetVMInfo(vmID int) (*VMInfo, error) {
 	// Mock VM status with reasonable defaults
 	status := &VMInfo{
 		Name:      vm.Name,
-		State:     vm.State,
+		Status:    vm.Status,
 		VMID:      vm.ID,
 		NodeName:  c.nodeName,
 		CPU:       0.0, // 0% CPU usage when not running
@@ -266,7 +266,7 @@ func (c *MockProxmoxClient) GetVMInfo(vmID int) (*VMInfo, error) {
 	}
 
 	// If VM is running, simulate some resource usage
-	if vm.State == VMStateRunning {
+	if vm.Status == VMStatusRunning {
 		status.CPU = 0.05                    // 5% CPU usage
 		status.Memory = status.MaxMemory / 4 // Using 25% of allocated memory
 		status.Uptime = 3600                 // 1 hour uptime (mock value)

@@ -191,8 +191,8 @@ func (t *StubKamajiTenantClient) DeleteWorkerNode(ctx context.Context, nodeName 
 }
 
 // GetNodeStatus gets the status of a node
-func (t *StubKamajiTenantClient) GetNodeStatus(ctx context.Context, nodeName string) (*NodeStatus, error) {
-	return &NodeStatus{
+func (t *StubKamajiTenantClient) GetNodeStatus(ctx context.Context, nodeName string) (*KubeNodeStatus, error) {
+	return &KubeNodeStatus{
 		Name:           nodeName,
 		Ready:          true,
 		KubeletVersion: "v1.21.0",

@@ -30,7 +30,7 @@ func (m *MetricsReporter) Report() error {
 
 		// Process services in current page
 		for _, service := range services.Items {
-			if service.CurrentState != ServiceStarted {
+			if service.CurrentStatus != ServiceStarted {
 				continue
 			}
 			if service.Resources == nil || service.Resources.Nodes == nil || service.ExternalID == nil {
@@ -60,7 +60,7 @@ func (m *MetricsReporter) processServiceMetrics(service *Service) error {
 			slog.Error("failed to get VM info", "id", id, "error", err)
 			continue
 		}
-		if info.State != VMStateRunning {
+		if info.Status != VMStatusRunning {
 			continue
 		}
 		var metrics []MetricEntry
