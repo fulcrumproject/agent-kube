@@ -1,3 +1,5 @@
+// Provides an in-memory Core client for tests and mock mode.
+// It uses current job params and completion payloads with an example lifecycle.
 package agent
 
 import (
@@ -6,483 +8,264 @@ import (
 	"time"
 )
 
-// MockFulcrumClient implements FulcrumClient interface for testing
+// MockFulcrumClient implements FulcrumClient without external infrastructure.
 type MockFulcrumClient struct {
-	mu            sync.RWMutex
-	agentStatus   string
-	agentInfo     map[string]any
-	jobs          []*Job
-	jobMap        map[string]int
-	service       map[string]Service
-	serviceExtIDs map[string]string
+	mu          sync.RWMutex
+	agentStatus string
+	agentInfo   map[string]any
+	jobs        []*Job
+	jobMap      map[string]*Job
+	service     map[string]Service
 }
 
-// NewMockFulcrumClient creates a new in-memory stub Fulcrum client
 func NewMockFulcrumClient() *MockFulcrumClient {
 	return &MockFulcrumClient{
-		agentStatus: "Online",
-		jobs:        []*Job{},
-		jobMap:      make(map[string]int),
+		agentStatus: "Connected",
+		jobMap:      make(map[string]*Job),
 		agentInfo: map[string]any{
 			"id":   "test-agent-id",
 			"name": "test-agent",
-			"type": "kubernetes",
 		},
-		service:       make(map[string]Service),
-		serviceExtIDs: make(map[string]string),
+		service: make(map[string]Service),
 	}
 }
 
-// UpdateAgentStatus updates the agent's status
 func (c *MockFulcrumClient) UpdateAgentStatus(status string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
 	c.agentStatus = status
 	return nil
 }
 
-// GetAgentStatus returns the current agent status (for test verification)
 func (c *MockFulcrumClient) GetAgentStatus() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-
 	return c.agentStatus
 }
 
-// GetAgentInfo retrieves the agent's information
 func (c *MockFulcrumClient) GetAgentInfo() (map[string]any, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-
-	// Return a deep copy to avoid test interference
-	infoCopy := make(map[string]any, len(c.agentInfo))
+	info := make(map[string]any, len(c.agentInfo))
 	for k, v := range c.agentInfo {
-		infoCopy[k] = v
+		info[k] = v
 	}
-
-	return infoCopy, nil
+	return info, nil
 }
 
-// SetAgentInfo sets the agent information that will be returned by GetAgentInfo
 func (c *MockFulcrumClient) SetAgentInfo(info map[string]any) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
 	c.agentInfo = info
 }
 
-// GetPendingJobs retrieves pending jobs for this agent
 func (c *MockFulcrumClient) GetPendingJobs() ([]*Job, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-
-	// Create a slice to hold the pending jobs
-	var pendingJobs []*Job
-
-	// Iterate over the jobs and find those that are pending
-	for _, j := range c.jobs {
-		if j.Status == JobStatusPending {
-			pendingJobs = append(pendingJobs, j)
+	var pending []*Job
+	for _, job := range c.jobs {
+		if job.Status == JobStatusPending {
+			copy := *job
+			pending = append(pending, &copy)
 		}
 	}
-
-	return pendingJobs, nil
+	return pending, nil
 }
 
-// PullCompletedJobs returns all completed jobs
 func (c *MockFulcrumClient) PullCompletedJobs() []*Job {
 	return c.PullJobs(JobStatusCompleted)
 }
 
-// PullFailedJobs returns all failed jobs
 func (c *MockFulcrumClient) PullFailedJobs() []*Job {
 	return c.PullJobs(JobStatusFailed)
 }
 
-// GetFailedJobs returns jobs by status and removes them from the queue
 func (c *MockFulcrumClient) PullJobs(status JobStatus) []*Job {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	// Create a slice to hold the jobs
-	var jobs []*Job
-
-	// Iterate over the jobs and find those that match the status
-	for i, j := range c.jobs {
-		if c.jobs[i].Status == status {
-			jobs = append(jobs, j)
-			// Remove job from the queue
-			delete(c.jobMap, c.jobs[i].ID)
-			c.jobs = append(c.jobs[:i], c.jobs[i+1:]...)
+	var pulled, remaining []*Job
+	for _, job := range c.jobs {
+		if job.Status == status {
+			pulled = append(pulled, job)
+			delete(c.jobMap, job.ID)
+		} else {
+			remaining = append(remaining, job)
 		}
 	}
-
-	return jobs
+	c.jobs = remaining
+	return pulled
 }
 
-// ClaimJob claims a job for processing
 func (c *MockFulcrumClient) ClaimJob(jobID string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	// Find the job by ID in our map
-	idx, exists := c.jobMap[jobID]
-	if !exists {
-		return fmt.Errorf("job with ID %s not found", jobID)
+	job, ok := c.jobMap[jobID]
+	if !ok || job.Status != JobStatusPending {
+		return fmt.Errorf("job %s is not pending", jobID)
 	}
-
-	// Get the job from our array
-	job := c.jobs[idx]
-
-	// Check if job is already claimed/not pending
-	if job.Status != JobStatusPending {
-		return fmt.Errorf("job with ID %s is not in pending status", jobID)
-	}
-
-	// Mark as claimed by updating its status
 	job.Status = JobStatusProcessing
-
 	return nil
 }
 
-// CompleteJob marks a job as completed with results
 func (c *MockFulcrumClient) CompleteJob(jobID string, response JobResponse) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	// Find the job by ID in our map
-	idx, exists := c.jobMap[jobID]
-	if !exists {
-		return fmt.Errorf("job with ID %s not found", jobID)
+	job, ok := c.jobMap[jobID]
+	if !ok || job.Status != JobStatusProcessing {
+		return fmt.Errorf("job %s is not processing", jobID)
 	}
-
-	// Get the job
-	job := c.jobs[idx]
-
-	// Check if job is in the correct status
-	if job.Status != JobStatusProcessing {
-		return fmt.Errorf("job with ID %s is not in processing status", jobID)
+	service := c.service[job.ServiceID]
+	if response.AgentInstanceData != nil {
+		service.AgentInstanceData = response.AgentInstanceData
 	}
-
-	// Get the service from the job (this fixes the key issue)
-	service := job.Service
-
-	// Update the service with the response
-	service.Resources = response.Resources
-
-	// Update the service status
-	service.CurrentStatus = *service.TargetStatus
-	service.TargetStatus = nil
-
-	// Only update CurrentProperties if TargetProperties is not nil
-	// This preserves CurrentProperties for actions like start/stop that don't modify properties
-	if service.TargetProperties != nil {
-		service.CurrentProperties = service.TargetProperties
-		service.TargetProperties = nil
+	if response.AgentInstanceID != nil {
+		service.AgentInstanceID = response.AgentInstanceID
 	}
-
-	// Store the updated service in the map by its proper ID
+	switch job.Action {
+	case JobActionServiceCreate:
+		service.Status = ServiceCreated
+	case JobActionServiceStart:
+		service.Status = ServiceStarted
+	case JobActionServiceStop:
+		service.Status = ServiceStopped
+	case JobActionServiceDelete:
+		service.Status = ServiceDeleted
+	case JobActionServiceUpdate:
+		service.Properties = job.Params
+	}
 	c.service[service.ID] = service
-
-	// Mark job as completed
 	job.Status = JobStatusCompleted
-
 	return nil
 }
 
-// FailJob marks a job as failed with an error message
-func (c *MockFulcrumClient) FailJob(jobID string, errorMessage string) error {
+func (c *MockFulcrumClient) FailJob(jobID string, message string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	// Find the job by ID in our map
-	idx, exists := c.jobMap[jobID]
-	if !exists {
-		return fmt.Errorf("job with ID %s not found", jobID)
+	job, ok := c.jobMap[jobID]
+	if !ok || job.Status != JobStatusProcessing {
+		return fmt.Errorf("job %s is not processing", jobID)
 	}
-
-	// Get the job
-	job := c.jobs[idx]
-
-	// Check if job is in the correct status
-	if job.Status != JobStatusProcessing {
-		return fmt.Errorf("job with ID %s is not in processing status", jobID)
-	}
-
-	// Mark job as failed and store error message
 	job.Status = JobStatusFailed
-	job.ErrorMessage = errorMessage
-
+	job.ErrorMessage = message
 	return nil
 }
 
-// ReportMetric reports a metric
 func (c *MockFulcrumClient) ReportMetric(metric *MetricEntry) error {
-	fmt.Printf("Metric %s %s %s=%v", metric.ExternalID, metric.ResourceID, metric.TypeName, metric.Value)
+	fmt.Printf("Metric %s %s %s=%v", metric.AgentInstanceID, metric.ResourceID, metric.TypeName, metric.Value)
 	return nil
 }
 
-// CreateService creates a new service with the given parameters
-func (c *MockFulcrumClient) CreateService(id, name string, externalID *string, targetProperties *Properties) error {
+func (c *MockFulcrumClient) CreateService(id, name string, instanceID *string, properties *Properties) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	if _, exists := c.service[id]; exists {
-		return fmt.Errorf("service with ID %s already exists", id)
+	if _, ok := c.service[id]; ok {
+		return fmt.Errorf("service %s already exists", id)
 	}
-
-	targetStatus := ServiceCreated
-	currentStatus := ServiceCreating
-
-	// Create the service
 	service := Service{
-		ID:                id,
-		Name:              name,
-		ExternalID:        externalID,
-		CurrentProperties: nil, // Initially no current properties
-		TargetProperties:  targetProperties,
-		Resources:         nil,
-		CurrentStatus:     currentStatus,
-		TargetStatus:      &targetStatus,
+		ID:              id,
+		Name:            name,
+		AgentInstanceID: instanceID,
+		Properties:      properties,
+		Status:          ServiceNew,
+		ServiceType: &ServiceType{LifecycleSchema: &LifecycleSchema{
+			RunningStates: []ServiceStatus{ServiceStarted},
+		}},
 	}
-
-	// Store the service
 	c.service[id] = service
-
-	// Store external ID mapping if it exists
-	if externalID != nil {
-		c.serviceExtIDs[*externalID] = id
-	}
-
-	// Create a job for service creation
-	job := &Job{
-		ID:       fmt.Sprintf("job-%s-create-%d", id, time.Now().UnixNano()),
-		Action:   JobActionServiceCreate,
-		Status:   JobStatusPending,
-		Priority: 1,
-		Service:  service,
-	}
-	c.EnqueueJob(job)
-
-	return nil
+	return c.enqueueServiceJob(service, JobActionServiceCreate, properties)
 }
 
-// StartService starts a service
 func (c *MockFulcrumClient) StartService(id string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	service, exists := c.service[id]
-	if !exists {
-		return fmt.Errorf("service with ID %s not found", id)
+	service, ok := c.service[id]
+	if !ok || (service.Status != ServiceCreated && service.Status != ServiceStopped) {
+		return fmt.Errorf("service %s must be created or stopped before starting", id)
 	}
-
-	if service.CurrentStatus != ServiceCreated && service.CurrentStatus != ServiceStopped {
-		return fmt.Errorf("service with ID %s must be created or stopped before starting", id)
-	}
-
-	// Update status
-	service.CurrentStatus = ServiceStarting
-	targetStatus := ServiceStarted
-	service.TargetStatus = &targetStatus
-
-	c.service[id] = service
-
-	// Create a job for service start
-	job := &Job{
-		ID:       fmt.Sprintf("job-%s-start-%d", id, time.Now().UnixNano()),
-		Action:   JobActionServiceStart,
-		Status:   JobStatusPending,
-		Priority: 1,
-		Service:  service,
-	}
-	c.EnqueueJob(job)
-
-	return nil
+	return c.enqueueServiceJob(service, JobActionServiceStart, nil)
 }
 
-// StopService stops a service
 func (c *MockFulcrumClient) StopService(id string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	service, exists := c.service[id]
-	if !exists {
-		return fmt.Errorf("service with ID %s not found", id)
+	service, ok := c.service[id]
+	if !ok || service.Status != ServiceStarted {
+		return fmt.Errorf("service %s must be started before stopping", id)
 	}
-
-	if service.CurrentStatus != ServiceStarted {
-		return fmt.Errorf("service with ID %s must be started before stopping", id)
-	}
-
-	// Update status
-	service.CurrentStatus = ServiceStopping
-	targetStatus := ServiceStopped
-	service.TargetStatus = &targetStatus
-
-	c.service[id] = service
-
-	// Create a job for service stop
-	job := &Job{
-		ID:       fmt.Sprintf("job-%s-stop-%d", id, time.Now().UnixNano()),
-		Action:   JobActionServiceStop,
-		Status:   JobStatusPending,
-		Priority: 1,
-		Service:  service,
-	}
-	c.EnqueueJob(job)
-
-	return nil
+	return c.enqueueServiceJob(service, JobActionServiceStop, nil)
 }
 
-// UpdateService updates an existing service with new target properties
-func (c *MockFulcrumClient) UpdateService(id string, targetProperties *Properties) error {
+func (c *MockFulcrumClient) UpdateService(id string, properties *Properties) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	service, exists := c.service[id]
-	if !exists {
-		return fmt.Errorf("service with ID %s not found", id)
+	service, ok := c.service[id]
+	if !ok || (service.Status != ServiceStarted && service.Status != ServiceStopped) {
+		return fmt.Errorf("service %s must be started or stopped before updating", id)
 	}
-
-	// Update target properties
-	service.TargetProperties = targetProperties
-
-	var jobAction JobAction
-
-	// Update current status based on the operation
-	if service.CurrentStatus == ServiceStarted {
-		service.CurrentStatus = ServiceHotUpdating
-		targetStatus := ServiceStarted
-		service.TargetStatus = &targetStatus
-		jobAction = JobActionServiceHotUpdate
-	} else if service.CurrentStatus == ServiceStopped {
-		service.CurrentStatus = ServiceColdUpdating
-		targetStatus := ServiceStopped
-		service.TargetStatus = &targetStatus
-		jobAction = JobActionServiceColdUpdate
-	} else {
-		return fmt.Errorf("service with ID %s must be started or stopped before updating", id)
-	}
-
-	c.service[id] = service
-
-	// Create a job for service update
-	job := &Job{
-		ID:       fmt.Sprintf("job-%s-update-%d", id, time.Now().UnixNano()),
-		Action:   jobAction,
-		Status:   JobStatusPending,
-		Priority: 1,
-		Service:  service,
-	}
-	c.EnqueueJob(job)
-
-	return nil
+	return c.enqueueServiceJob(service, JobActionServiceUpdate, properties)
 }
 
-// DeleteService deletes a service
 func (c *MockFulcrumClient) DeleteService(id string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	service, exists := c.service[id]
-	if !exists {
-		return fmt.Errorf("service with ID %s not found", id)
+	service, ok := c.service[id]
+	if !ok || service.Status != ServiceStopped {
+		return fmt.Errorf("service %s must be stopped before deletion", id)
 	}
-
-	if service.CurrentStatus != ServiceStopped {
-		return fmt.Errorf("service with ID %s must be stopped before deletion", id)
-	}
-
-	// Update status to deleting
-	service.CurrentStatus = ServiceDeleting
-	targetStatus := ServiceDeleted
-	service.TargetStatus = &targetStatus
-	c.service[id] = service
-
-	// Create a job for service deletion
-	job := &Job{
-		ID:       fmt.Sprintf("job-%s-delete-%d", id, time.Now().UnixNano()),
-		Action:   JobActionServiceDelete,
-		Status:   JobStatusPending,
-		Priority: 1,
-		Service:  service,
-	}
-	c.EnqueueJob(job)
-
-	return nil
+	return c.enqueueServiceJob(service, JobActionServiceDelete, nil)
 }
 
-// GetService retrieves a service by ID
 func (c *MockFulcrumClient) GetService(id string) (Service, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-
-	service, exists := c.service[id]
-	if !exists {
-		return Service{}, fmt.Errorf("service with ID %s not found", id)
+	service, ok := c.service[id]
+	if !ok {
+		return Service{}, fmt.Errorf("service %s not found", id)
 	}
-
 	return service, nil
 }
 
-// GetServiceByExternalID retrieves a service by its external ID
-func (c *MockFulcrumClient) GetServiceByExternalID(externalID string) (Service, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	serviceID, exists := c.serviceExtIDs[externalID]
-	if !exists {
-		return Service{}, fmt.Errorf("service with external ID %s not found", externalID)
-	}
-
-	service, exists := c.service[serviceID]
-	if !exists {
-		// This should not happen if the maps are properly maintained
-		return Service{}, fmt.Errorf("inconsistent status: service ID %s points to non-existent service", serviceID)
-	}
-
-	return service, nil
+func (c *MockFulcrumClient) enqueueServiceJob(service Service, action JobAction, params *Properties) error {
+	// Core's pending-job query preloads Service but not Service.ServiceType.
+	service.ServiceType = nil
+	return c.enqueueJob(&Job{
+		ID:        fmt.Sprintf("job-%s-%s-%d", service.ID, action, time.Now().UnixNano()),
+		ServiceID: service.ID,
+		Action:    action,
+		Params:    params,
+		Status:    JobStatusPending,
+		Priority:  1,
+		Service:   service,
+	})
 }
 
-// EnqueueJob adds a job to the queue
 func (c *MockFulcrumClient) EnqueueJob(job *Job) error {
-	// Check if job already exists
-	if _, exists := c.jobMap[job.ID]; exists {
-		return fmt.Errorf("job with ID %s already exists", job.ID)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.enqueueJob(job)
+}
+
+func (c *MockFulcrumClient) enqueueJob(job *Job) error {
+	if _, ok := c.jobMap[job.ID]; ok {
+		return fmt.Errorf("job %s already exists", job.ID)
 	}
-	// Add job to the array and map
 	c.jobs = append(c.jobs, job)
-	c.jobMap[job.ID] = len(c.jobs) - 1
+	c.jobMap[job.ID] = job
 	return nil
 }
 
-// GetServices retrieves all services from the mock client
 func (c *MockFulcrumClient) GetServices(_ int) (*ServicesResponse, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-
-	// Create a slice to hold all services
 	services := make([]*Service, 0, len(c.service))
-
-	// Convert the map of services to a slice of service pointers
-	for _, svc := range c.service {
-		// We need to make a copy of the service to avoid
-		// issues with map values being overwritten
-		serviceCopy := svc
-		services = append(services, &serviceCopy)
+	for _, service := range c.service {
+		copy := service
+		services = append(services, &copy)
 	}
-
-	// Create a paginated response
-	response := &ServicesResponse{
+	return &ServicesResponse{
 		Items:       services,
 		TotalItems:  len(services),
 		TotalPages:  1,
 		CurrentPage: 1,
-		HasNext:     false,
-		HasPrev:     false,
-	}
-
-	return response, nil
+	}, nil
 }

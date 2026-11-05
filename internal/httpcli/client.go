@@ -103,13 +103,7 @@ func (c *Client) formatAuthHeader() string {
 
 // Get performs an HTTP GET request to the specified endpoint
 func (c *Client) Get(endpoint string) (*http.Response, error) {
-	u, err := url.Parse(c.BaseURL)
-	if err != nil {
-		return nil, err
-	}
-	u.Path = path.Join(u.Path, endpoint)
-
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	req, err := c.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +216,16 @@ func (c *Client) NewRequest(method string, endpoint string, body io.Reader) (*ht
 	if err != nil {
 		return nil, err
 	}
-	u.Path = path.Join(u.Path, endpoint)
+	rel, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	u.Path = path.Join(u.Path, rel.Path)
+	query := u.Query()
+	for key, values := range rel.Query() {
+		query[key] = values
+	}
+	u.RawQuery = query.Encode()
 
 	req, err := http.NewRequest(method, u.String(), body)
 	if err != nil {

@@ -53,19 +53,19 @@ func TestJobHandler(t *testing.T) {
 		// Verify service status
 		service, err := fulcrumCli.GetService(serviceID)
 		require.NoError(t, err)
-		require.Equal(t, ServiceCreated, service.CurrentStatus)
+		require.Equal(t, ServiceCreated, service.Status)
 
 		// Verify node properties
-		require.NotNil(t, service.CurrentProperties)
-		require.Len(t, service.CurrentProperties.Nodes, 1)
-		serviceNode := service.CurrentProperties.Nodes[0]
+		require.NotNil(t, service.Properties)
+		require.Len(t, service.Properties.Nodes, 1)
+		serviceNode := service.Properties.Nodes[0]
 		require.Equal(t, "node1", serviceNode.ID)
 		require.Equal(t, NodeSizeS1, serviceNode.Size)
 		require.Equal(t, NodeStatusOn, serviceNode.Status)
 
 		// Verify VM was created properly
-		require.NotNil(t, service.Resources)
-		vmID1, exists := service.Resources.Nodes["node1"]
+		require.NotNil(t, service.AgentInstanceData)
+		vmID1, exists := service.AgentInstanceData.Nodes["node1"]
 		require.True(t, exists)
 
 		vm, exists := proxmoxCli.GetVM(vmID1)
@@ -91,7 +91,7 @@ func TestJobHandler(t *testing.T) {
 		// Verify service status
 		service, err = fulcrumCli.GetService(serviceID)
 		require.NoError(t, err)
-		require.Equal(t, ServiceStarted, service.CurrentStatus)
+		require.Equal(t, ServiceStarted, service.Status)
 
 		// Verify VM is now running
 		vm, exists = proxmoxCli.GetVM(vmID1)
@@ -99,7 +99,7 @@ func TestJobHandler(t *testing.T) {
 		require.Equal(t, VMStatusRunning, vm.Status)
 
 		// Job 3: Update the cluster service adding a node (id: node2, size: s2, status: on)
-		node1 := service.CurrentProperties.Nodes[0]                        // Keep existing node1
+		node1 := service.Properties.Nodes[0]                               // Keep existing node1
 		node2 := Node{ID: "node2", Size: NodeSizeS2, Status: NodeStatusOn} // Add new node2
 		updatedProps := &Properties{Nodes: []Node{node1, node2}}
 
@@ -117,13 +117,13 @@ func TestJobHandler(t *testing.T) {
 		// Verify service status
 		service, err = fulcrumCli.GetService(serviceID)
 		require.NoError(t, err)
-		require.Equal(t, ServiceStarted, service.CurrentStatus)
+		require.Equal(t, ServiceStarted, service.Status)
 
 		// Verify service now has two nodes
-		require.Len(t, service.CurrentProperties.Nodes, 2)
+		require.Len(t, service.Properties.Nodes, 2)
 
 		// Verify node2 was created
-		vmID2, exists := service.Resources.Nodes["node2"]
+		vmID2, exists := service.AgentInstanceData.Nodes["node2"]
 		require.True(t, exists)
 
 		vm2, exists := proxmoxCli.GetVM(vmID2)
@@ -137,7 +137,7 @@ func TestJobHandler(t *testing.T) {
 		require.Equal(t, expectedMemory2, vm2.Memory)
 
 		// Job 4: Update the cluster service making node2 off
-		nodeList := service.CurrentProperties.Nodes
+		nodeList := service.Properties.Nodes
 		updatedNodes := make([]Node, len(nodeList))
 		copy(updatedNodes, nodeList)
 
@@ -164,7 +164,7 @@ func TestJobHandler(t *testing.T) {
 		// Verify service status
 		service, err = fulcrumCli.GetService(serviceID)
 		require.NoError(t, err)
-		require.Equal(t, ServiceStarted, service.CurrentStatus)
+		require.Equal(t, ServiceStarted, service.Status)
 
 		// Verify node2 is now off
 		vm2, exists = proxmoxCli.GetVM(vmID2)
@@ -177,7 +177,7 @@ func TestJobHandler(t *testing.T) {
 		require.Equal(t, VMStatusRunning, vm.Status)
 
 		// Job 5: Update the cluster service making node2 on
-		nodeList = service.CurrentProperties.Nodes
+		nodeList = service.Properties.Nodes
 		updatedNodes = make([]Node, len(nodeList))
 		copy(updatedNodes, nodeList)
 
@@ -204,7 +204,7 @@ func TestJobHandler(t *testing.T) {
 		// Verify service status
 		service, err = fulcrumCli.GetService(serviceID)
 		require.NoError(t, err)
-		require.Equal(t, ServiceStarted, service.CurrentStatus)
+		require.Equal(t, ServiceStarted, service.Status)
 
 		// Verify node2 is now on again
 		vm2, exists = proxmoxCli.GetVM(vmID2)
@@ -212,7 +212,7 @@ func TestJobHandler(t *testing.T) {
 		require.Equal(t, VMStatusRunning, vm2.Status)
 
 		// Job 6: Update the cluster service making node2 off again
-		nodeList = service.CurrentProperties.Nodes
+		nodeList = service.Properties.Nodes
 		updatedNodes = make([]Node, len(nodeList))
 		copy(updatedNodes, nodeList)
 
@@ -239,7 +239,7 @@ func TestJobHandler(t *testing.T) {
 		// Verify service status
 		service, err = fulcrumCli.GetService(serviceID)
 		require.NoError(t, err)
-		require.Equal(t, ServiceStarted, service.CurrentStatus)
+		require.Equal(t, ServiceStarted, service.Status)
 
 		// Verify node2 is off again
 		vm2, exists = proxmoxCli.GetVM(vmID2)
@@ -265,7 +265,7 @@ func TestJobHandler(t *testing.T) {
 		// Verify service status
 		service, err = fulcrumCli.GetService(serviceID)
 		require.NoError(t, err)
-		require.Equal(t, ServiceStopped, service.CurrentStatus)
+		require.Equal(t, ServiceStopped, service.Status)
 
 		// Verify both nodes are now stopped
 		vm, exists = proxmoxCli.GetVM(vmID1)
@@ -277,7 +277,7 @@ func TestJobHandler(t *testing.T) {
 		require.Equal(t, VMStatusStopped, vm2.Status)
 
 		// Job 8: Update the cluster service removing node2
-		nodeList = service.CurrentProperties.Nodes
+		nodeList = service.Properties.Nodes
 		updatedNodes = []Node{}
 
 		// Keep only node1, removing node2
@@ -303,11 +303,11 @@ func TestJobHandler(t *testing.T) {
 		// Verify service status
 		service, err = fulcrumCli.GetService(serviceID)
 		require.NoError(t, err)
-		require.Equal(t, ServiceStopped, service.CurrentStatus)
+		require.Equal(t, ServiceStopped, service.Status)
 
 		// Verify node2 is removed from properties
-		require.Len(t, service.CurrentProperties.Nodes, 1)
-		require.Equal(t, "node1", service.CurrentProperties.Nodes[0].ID)
+		require.Len(t, service.Properties.Nodes, 1)
+		require.Equal(t, "node1", service.Properties.Nodes[0].ID)
 
 		// Job 9: Start the cluster service again
 		err = fulcrumCli.StartService(serviceID)
@@ -323,7 +323,7 @@ func TestJobHandler(t *testing.T) {
 		// Verify service status
 		service, err = fulcrumCli.GetService(serviceID)
 		require.NoError(t, err)
-		require.Equal(t, ServiceStarted, service.CurrentStatus)
+		require.Equal(t, ServiceStarted, service.Status)
 
 		// Verify node1 is now running again
 		vm, exists = proxmoxCli.GetVM(vmID1)
@@ -344,7 +344,7 @@ func TestJobHandler(t *testing.T) {
 		// Verify service status
 		service, err = fulcrumCli.GetService(serviceID)
 		require.NoError(t, err)
-		require.Equal(t, ServiceStopped, service.CurrentStatus)
+		require.Equal(t, ServiceStopped, service.Status)
 
 		// Verify node1 is now stopped
 		vm, exists = proxmoxCli.GetVM(vmID1)
@@ -365,7 +365,7 @@ func TestJobHandler(t *testing.T) {
 		// Verify service is in deleted status
 		service, err = fulcrumCli.GetService(serviceID)
 		require.NoError(t, err)
-		require.Equal(t, ServiceDeleted, service.CurrentStatus)
+		require.Equal(t, ServiceDeleted, service.Status)
 	})
 
 }

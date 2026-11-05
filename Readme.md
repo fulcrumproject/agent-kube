@@ -10,7 +10,7 @@ This agent manages the complete lifecycle of Kubernetes clusters provisioned on 
 
 ### Prerequisites
 
-- Go 1.20 or higher
+- Go 1.24.1 or higher
 - Access to a running Fulcrum Core API
 - Agent type and provider registered in Fulcrum Core
 
@@ -18,7 +18,7 @@ This agent manages the complete lifecycle of Kubernetes clusters provisioned on 
 
 ```bash
 # Build the agent
-go build -o fulcrum-kube-agent
+go build -o fulcrum-kube-agent ./cmd/fulcrum-kube-agent
 ```
 
 ## Configuration
@@ -118,12 +118,32 @@ The agent processes the following job types from Fulcrum Core:
 
 | Job Type            | Description                                                                  |
 | ------------------- | ---------------------------------------------------------------------------- |
-| `ServiceCreate`     | Creates a new Kubernetes tenant cluster with worker nodes                    |
-| `ServiceColdUpdate` | Updates cluster configuration (adding/removing nodes) without live migration |
-| `ServiceHotUpdate`  | Updates cluster configuration while maintaining service availability         |
-| `ServiceStart`      | Starts the cluster and its associated VMs                                    |
-| `ServiceStop`       | Stops the cluster and its associated VMs                                     |
-| `ServiceDelete`     | Deletes the entire cluster and cleans up resources                           |
+| `create` | Creates a tenant control plane and stopped worker VMs |
+| `update` | Adds/removes nodes; applies node On/Off changes only when the service is running |
+| `start`  | Starts worker VMs whose configured status is On |
+| `stop`   | Stops worker VMs whose configured status is On |
+| `delete` | Deletes worker VMs and the tenant control plane |
+
+### Core API contract
+
+Aligned with Fulcrum Core `3212fc7` (no legacy API compatibility):
+
+- `job.params` contains desired properties for `create` and `update`; `service.properties` contains the applied configuration.
+- `service.status` is a lifecycle state. Updates and metrics use `serviceType.lifecycleSchema.runningStates`, not a fixed `Started` label. Update jobs fetch the service separately because pending jobs do not include its service type.
+- Job completion sends `agentInstanceId` and `agentInstanceData` (cluster endpoint, kubeconfig and node-to-VM mapping). Metrics use `agentInstanceId` too.
+- Core owns state transitions and applies update params after completion. Unknown actions or missing job/instance data fail rather than being silently completed.
+- Core errors retain HTTP status, message and field-level validation details. Service listing sends the requested page as a query parameter.
+- Local configuration remains authoritative for this agent; Core-managed configuration and vault resolution are not implemented by this change.
+
+Existing limitations: changing a node's size is unsupported; infrastructure operations are not transactional or automatically rolled back. Do not blindly retry partially provisioned clusters.
+
+### Manual REST scenario
+
+[`test/rest/agent_kube.http`](test/rest/agent_kube.http) is a versioned VS Code REST Client scenario. It creates its own service type/lifecycle, agent type, participants and agent instead of depending on fixed IDs. Export `FULCRUM_TEST_ADMIN_TOKEN` to the REST Client process; never commit credentials or response exports.
+
+Use a disposable Core instance. Ensure Resource metric types `vm.cpu.usage` and `vm.memory.usage` exist, run setup, then configure the agent with the generated agent token. Wait for each asynchronous job to complete before the next request. `POST /services/{id}/delete` requests deletion; there is no generic `/retry` endpoint. The `.DS_Store` files in `test/` remain ignored.
+
+**Warning:** without `-mock`, this scenario creates and deletes real infrastructure. `-mock` mocks Proxmox/Kamaji/SSH only: it still connects to Core.
 
 ## Development
 
@@ -146,9 +166,14 @@ This will automatically rebuild and restart the agent when source files change.
 The agent includes comprehensive unit tests:
 
 ```bash
-# Run all tests
-go test ./...
+# Run unit and local HTTP contract tests (never contact real infrastructure)
+INTEGRATION_TEST=false go test ./...
+INTEGRATION_TEST=false go test -race ./...
+go vet ./...
 
-# Run specific tests
-go test -v ./agent
+# Run the cluster lifecycle tests with mock infrastructure
+go test -v ./internal/agent
+
+# Live infrastructure tests are opt-in; use only disposable resources.
+# INTEGRATION_TEST=true go test ./...
 ```

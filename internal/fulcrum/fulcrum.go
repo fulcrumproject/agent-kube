@@ -38,7 +38,7 @@ func (c *HTTPFulcrumClient) UpdateAgentStatus(status string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to update agent status, status: %d", resp.StatusCode)
+		return fmt.Errorf("failed to update agent status: %w", readAPIError(resp))
 	}
 
 	return nil
@@ -53,7 +53,7 @@ func (c *HTTPFulcrumClient) GetAgentInfo() (map[string]any, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to get agent info, status: %d", resp.StatusCode)
+		return nil, fmt.Errorf("failed to get agent info: %w", readAPIError(resp))
 	}
 
 	var result map[string]any
@@ -73,7 +73,7 @@ func (c *HTTPFulcrumClient) GetPendingJobs() ([]*agent.Job, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to get pending jobs, status: %d", resp.StatusCode)
+		return nil, fmt.Errorf("failed to get pending jobs: %w", readAPIError(resp))
 	}
 
 	var jobs []*agent.Job
@@ -94,7 +94,7 @@ func (c *HTTPFulcrumClient) ClaimJob(jobID string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("failed to claim job, status: %d", resp.StatusCode)
+		return fmt.Errorf("failed to claim job: %w", readAPIError(resp))
 	}
 
 	return nil
@@ -114,7 +114,7 @@ func (c *HTTPFulcrumClient) CompleteJob(jobID string, response agent.JobResponse
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("failed to complete job, status: %d", resp.StatusCode)
+		return fmt.Errorf("failed to complete job: %w", readAPIError(resp))
 	}
 
 	return nil
@@ -136,7 +136,7 @@ func (c *HTTPFulcrumClient) FailJob(jobID string, errorMessage string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("failed to mark job as failed, status: %d", resp.StatusCode)
+		return fmt.Errorf("failed to mark job as failed: %w", readAPIError(resp))
 	}
 
 	return nil
@@ -156,13 +156,30 @@ func (c *HTTPFulcrumClient) ReportMetric(metric *agent.MetricEntry) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("failed to report metrics, status: %d", resp.StatusCode)
+		return fmt.Errorf("failed to report metrics: %w", readAPIError(resp))
 	}
 
 	return nil
 }
 
-// GetServices retrieves all services from Fulcrum Core
+// GetService retrieves the service with its lifecycle schema.
+func (c *HTTPFulcrumClient) GetService(id string) (agent.Service, error) {
+	var service agent.Service
+	resp, err := c.httpClient.Get(fmt.Sprintf("/api/v1/services/%s", id))
+	if err != nil {
+		return service, fmt.Errorf("failed to get service: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return service, fmt.Errorf("failed to get service: %w", readAPIError(resp))
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&service); err != nil {
+		return service, fmt.Errorf("failed to decode service response: %w", err)
+	}
+	return service, nil
+}
+
+// GetServices retrieves a page of services from Fulcrum Core
 func (c *HTTPFulcrumClient) GetServices(page int) (*agent.ServicesResponse, error) {
 	url, err := url.Parse("/api/v1/services")
 	if err != nil {
@@ -170,6 +187,7 @@ func (c *HTTPFulcrumClient) GetServices(page int) (*agent.ServicesResponse, erro
 	}
 	query := url.Query()
 	query.Set("page", fmt.Sprintf("%d", page))
+	url.RawQuery = query.Encode()
 
 	resp, err := c.httpClient.Get(url.String())
 	if err != nil {
@@ -178,7 +196,7 @@ func (c *HTTPFulcrumClient) GetServices(page int) (*agent.ServicesResponse, erro
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to get services, status: %d", resp.StatusCode)
+		return nil, fmt.Errorf("failed to get services: %w", readAPIError(resp))
 	}
 
 	var servicesResponse agent.ServicesResponse

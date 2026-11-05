@@ -1,0 +1,417 @@
+### Test Agent Job Lifecycle
+### Manual scenario for VS Code REST Client; use a disposable Core instance.
+### Requests create real resources when a non-mock agent is connected.
+### Run setup once, then start the agent with the generated agentToken.
+### After EVERY service mutation, wait for its job to complete before continuing.
+### Expected states below belong to this example schema, not Core itself.
+### Delete removes cluster infrastructure, but leaves the terminal service record.
+### Revoke test tokens and remove setup records when finished; never save real tokens here.
+
+### Variables (set FULCRUM_TEST_ADMIN_TOKEN in the REST Client process environment)
+@baseUrl = http://localhost:3000/api/v1
+@adminToken = {{$processEnv FULCRUM_TEST_ADMIN_TOKEN}}
+
+### Create a provider for testing
+# @name createProvider
+POST {{baseUrl}}/participants
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+    "name": "Test K8s Participant Provider",
+    "status": "Enabled"
+}
+
+@providerId = {{createProvider.response.body.$.id}}
+
+### Create the Kubernetes service type (no installation-specific IDs)
+# @name createServiceType
+POST {{baseUrl}}/service-types
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+    "name": "Kubernetes {{$guid}}",
+    "propertySchema": {
+        "properties": {
+            "nodes": {
+                "type": "array",
+                "required": true,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "required": true,
+                            "validators": [{"type": "pattern", "config": {"pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"}}]
+                        },
+                        "size": {
+                            "type": "string",
+                            "required": true,
+                            "validators": [{"type": "enum", "config": {"values": ["s1", "s2", "s4"]}}]
+                        },
+                        "status": {
+                            "type": "string",
+                            "required": true,
+                            "validators": [{"type": "enum", "config": {"values": ["On", "Off"]}}]
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "lifecycleSchema": {
+        "states": [{"name": "New"}, {"name": "Created"}, {"name": "Started"}, {"name": "Stopped"}, {"name": "Deleted"}],
+        "initialState": "New",
+        "terminateState": "Deleted",
+        "terminalStates": ["Deleted"],
+        "runningStates": ["Started"],
+        "actions": [
+            {"name": "create", "transitions": [{"from": "New", "to": "Created"}]},
+            {"name": "start", "transitions": [{"from": "Created", "to": "Started"}, {"from": "Stopped", "to": "Started"}]},
+            {"name": "stop", "transitions": [{"from": "Started", "to": "Stopped"}]},
+            {"name": "update", "transitions": [{"from": "Started", "to": "Started"}, {"from": "Stopped", "to": "Stopped"}]},
+            {"name": "delete", "transitions": [{"from": "Stopped", "to": "Deleted"}]}
+        ]
+    }
+}
+
+@serviceTypeId = {{createServiceType.response.body.$.id}}
+
+### Create the agent type (Core requires a non-empty configuration schema)
+### notes is informational only; operational configuration remains local to the agent.
+# @name createAgentType
+POST {{baseUrl}}/agent-types
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+    "name": "Kube Agent Type {{$guid}}",
+    "serviceTypeIds": ["{{serviceTypeId}}"],
+    "configurationSchema": {
+        "properties": {
+            "notes": {"type": "string", "label": "Operator notes (not read by the agent)"}
+        }
+    }
+}
+
+@agentTypeId = {{createAgentType.response.body.$.id}}
+
+### Metrics prerequisites: ensure these Resource metric types exist once per Core:
+### vm.cpu.usage and vm.memory.usage (POST /metric-types with name and entityType).
+
+### Create an agent
+# @name createAgent
+POST {{baseUrl}}/agents
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+    "name": "Kube Agent Test",
+    "agentTypeId": "{{agentTypeId}}",
+    "providerId": "{{providerId}}"
+}
+
+@agentId = {{createAgent.response.body.$.id}}
+
+### Create a new agent token
+# @name createAgentToken
+POST {{baseUrl}}/tokens
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "name": "Kube Agent Token",
+  "role": "agent",
+  "expireAt": "{{$datetime iso8601 1 y}}",
+  "scopeId": "{{agentId}}"
+}
+
+@agentToken = {{createAgentToken.response.body.$.value}}
+
+### Create a new consumer
+# @name createConsumer
+POST {{baseUrl}}/participants
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "name": "Test K8s Participant Consumer",
+  "status": "Enabled"
+}
+
+@consumerId = {{createConsumer.response.body.$.id}}
+
+### Create a consumer token
+# @name createConsumerToken
+POST {{baseUrl}}/tokens
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "name": "Test Participant Consumer Token",
+  "role": "participant",
+  "expireAt": "{{$datetime iso8601 1 y}}",
+  "scopeId": "{{consumerId}}"
+}
+
+@consumerToken = {{createConsumerToken.response.body.$.value}}
+
+### Create a service group
+# @name createServiceGroup
+POST {{baseUrl}}/service-groups
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+{
+    "name": "Test K8s Cluster Group",
+    "consumerId": "{{consumerId}}"
+}
+
+@serviceGroupId = {{createServiceGroup.response.body.$.id}}
+
+### Step 1: Create a K8s cluster service with 1 node (id: node1, size: s1, status: on)
+# @name createService
+POST {{baseUrl}}/services
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+{
+    "name": "test-cluster-{{$guid}}",
+    "properties": {
+        "nodes": [
+            {
+                "id": "node1",
+                "size": "s1",
+                "status": "On"
+            }
+        ]
+    },
+    "agentId": "{{agentId}}",
+    "serviceTypeId": "{{serviceTypeId}}",
+    "groupId": "{{serviceGroupId}}"
+}
+
+@serviceId = {{createService.response.body.$.id}}
+
+### Verify service creation job is created
+# @name getJobs1
+GET {{baseUrl}}/jobs?serviceId={{serviceId}}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+### Get services
+# @name getServices1
+GET {{baseUrl}}/services?page=1
+Authorization: Bearer {{agentToken}}
+Content-Type: application/json
+
+### Verify service is in Created status
+# @name getService1
+GET {{baseUrl}}/services/{{serviceId}}
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+### Step 2: Start the cluster service
+# @name startService
+POST {{baseUrl}}/services/{{serviceId}}/start
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+### Verify service is in Started status
+# @name getService2
+GET {{baseUrl}}/services/{{serviceId}}
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+### Step 3: Update the cluster by adding a second node (node2)
+# @name updateService3
+PATCH {{baseUrl}}/services/{{serviceId}}
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+{
+    "properties": {
+        "nodes": [
+            {
+                "id": "node1",
+                "size": "s1",
+                "status": "On"
+            },
+            {
+                "id": "node2",
+                "size": "s2",
+                "status": "On"
+            }
+        ]
+    }
+}
+
+### Verify service has two nodes
+# @name getService3
+GET {{baseUrl}}/services/{{serviceId}}
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+### Step 4: Update the cluster turning node2 off while keeping node1 running
+# @name updateService4
+PATCH {{baseUrl}}/services/{{serviceId}}
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+{
+    "properties": {
+        "nodes": [
+            {
+                "id": "node1",
+                "size": "s1",
+                "status": "On"
+            },
+            {
+                "id": "node2",
+                "size": "s2",
+                "status": "Off"
+            }
+        ]
+    }
+}
+
+### Verify service has node2 off
+# @name getService4
+GET {{baseUrl}}/services/{{serviceId}}
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+### Step 5: Turn node2 back on
+# @name updateService5
+PATCH {{baseUrl}}/services/{{serviceId}}
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+{
+    "properties": {
+        "nodes": [
+            {
+                "id": "node1",
+                "size": "s1",
+                "status": "On"
+            },
+            {
+                "id": "node2",
+                "size": "s2",
+                "status": "On"
+            }
+        ]
+    }
+}
+
+### Verify service has node2 on again
+# @name getService5
+GET {{baseUrl}}/services/{{serviceId}}
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+### Step 6: Turn node2 off again
+# @name updateService6
+PATCH {{baseUrl}}/services/{{serviceId}}
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+{
+    "properties": {
+        "nodes": [
+            {
+                "id": "node1",
+                "size": "s1",
+                "status": "On"
+            },
+            {
+                "id": "node2",
+                "size": "s2",
+                "status": "Off"
+            }
+        ]
+    }
+}
+
+### Verify service has node2 off again
+# @name getService6
+GET {{baseUrl}}/services/{{serviceId}}
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+### Step 7: Stop the entire cluster service
+# @name stopService
+POST {{baseUrl}}/services/{{serviceId}}/stop
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+### Verify service is stopped
+# @name getService7
+GET {{baseUrl}}/services/{{serviceId}}
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+### Step 8: Update service to remove node2 from the cluster
+# @name updateService8
+PATCH {{baseUrl}}/services/{{serviceId}}
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+{
+    "properties": {
+        "nodes": [
+            {
+                "id": "node1",
+                "size": "s1",
+                "status": "On"
+            }
+        ]
+    }
+}
+
+### Verify service only has node1
+# @name getService8
+GET {{baseUrl}}/services/{{serviceId}}
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+### Step 9: Start the cluster service again
+# @name startServiceAgain
+POST {{baseUrl}}/services/{{serviceId}}/start
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+### Verify service is started again
+# @name getService9
+GET {{baseUrl}}/services/{{serviceId}}
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+### Step 10: Stop the cluster service again
+# @name stopServiceAgain
+POST {{baseUrl}}/services/{{serviceId}}/stop
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+### Verify service is stopped again
+# @name getService10
+GET {{baseUrl}}/services/{{serviceId}}
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+### Step 11: Delete the cluster service
+# @name deleteService
+POST {{baseUrl}}/services/{{serviceId}}/delete
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+### Verify service is deleted
+# @name getService11
+GET {{baseUrl}}/services/{{serviceId}}
+Authorization: Bearer {{consumerToken}}
+Content-Type: application/json
+
+### Failed operations: inspect the job's errorMessage and fix the cause.
+### Retry the original action (or PATCH for update) only if allowed by the lifecycle.
+### There is no generic /retry endpoint, and terminal services cannot be retried.

@@ -1,3 +1,5 @@
+// Collects VM metrics for services in lifecycle-defined running states.
+// Each metric identifies the service through its agent instance ID.
 package agent
 
 import (
@@ -30,10 +32,14 @@ func (m *MetricsReporter) Report() error {
 
 		// Process services in current page
 		for _, service := range services.Items {
-			if service.CurrentStatus != ServiceStarted {
+			running, err := service.IsRunning()
+			if err != nil {
+				return err
+			}
+			if !running {
 				continue
 			}
-			if service.Resources == nil || service.Resources.Nodes == nil || service.ExternalID == nil {
+			if service.AgentInstanceData == nil || service.AgentInstanceData.Nodes == nil || service.AgentInstanceID == nil {
 				continue
 			}
 
@@ -53,7 +59,7 @@ func (m *MetricsReporter) Report() error {
 
 // processServiceMetrics collects and reports metrics for a single service
 func (m *MetricsReporter) processServiceMetrics(service *Service) error {
-	for name, id := range service.Resources.Nodes {
+	for name, id := range service.AgentInstanceData.Nodes {
 		// Get the node metrics
 		info, err := m.proxmoxCli.GetVMInfo(id)
 		if err != nil {
@@ -66,16 +72,16 @@ func (m *MetricsReporter) processServiceMetrics(service *Service) error {
 		var metrics []MetricEntry
 		// Report the metrics
 		metrics = append(metrics, MetricEntry{
-			ExternalID: *service.ExternalID,
-			ResourceID: name,
-			Value:      info.CPU,
-			TypeName:   MetricTypeVMCPUUsage,
+			AgentInstanceID: *service.AgentInstanceID,
+			ResourceID:      name,
+			Value:           info.CPU,
+			TypeName:        MetricTypeVMCPUUsage,
 		})
 		metrics = append(metrics, MetricEntry{
-			ExternalID: *service.ExternalID,
-			ResourceID: name,
-			Value:      float64(info.Memory),
-			TypeName:   MetricTypeVMMemoryUsage,
+			AgentInstanceID: *service.AgentInstanceID,
+			ResourceID:      name,
+			Value:           float64(info.Memory),
+			TypeName:        MetricTypeVMMemoryUsage,
 		})
 		for _, metric := range metrics {
 			if err := m.fulcrumCli.ReportMetric(&metric); err != nil {

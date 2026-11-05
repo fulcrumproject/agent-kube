@@ -1,31 +1,33 @@
+// Defines the Core API payloads used by the Kubernetes agent.
+// Service states are defined by each service type's lifecycle schema.
 package agent
 
-// ServiceStatus represents the possible statuss of a service
+import (
+	"fmt"
+	"slices"
+)
+
+// ServiceStatus is a state name from a service type's lifecycle.
 type ServiceStatus string
 
 const (
-	ServiceCreating     ServiceStatus = "Creating"
-	ServiceCreated      ServiceStatus = "Created"
-	ServiceStarting     ServiceStatus = "Starting"
-	ServiceStarted      ServiceStatus = "Started"
-	ServiceStopping     ServiceStatus = "Stopping"
-	ServiceStopped      ServiceStatus = "Stopped"
-	ServiceHotUpdating  ServiceStatus = "HotUpdating"
-	ServiceColdUpdating ServiceStatus = "ColdUpdating"
-	ServiceDeleting     ServiceStatus = "Deleting"
-	ServiceDeleted      ServiceStatus = "Deleted"
+	// These names belong to the example lifecycle, not to Core's API contract.
+	ServiceNew     ServiceStatus = "New"
+	ServiceCreated ServiceStatus = "Created"
+	ServiceStarted ServiceStatus = "Started"
+	ServiceStopped ServiceStatus = "Stopped"
+	ServiceDeleted ServiceStatus = "Deleted"
 )
 
 // JobAction represents the type of job
 type JobAction string
 
 const (
-	JobActionServiceCreate     JobAction = "ServiceCreate"
-	JobActionServiceStart      JobAction = "ServiceStart"
-	JobActionServiceStop       JobAction = "ServiceStop"
-	JobActionServiceHotUpdate  JobAction = "ServiceHotUpdate"
-	JobActionServiceColdUpdate JobAction = "ServiceColdUpdate"
-	JobActionServiceDelete     JobAction = "ServiceDelete"
+	JobActionServiceCreate JobAction = "create"
+	JobActionServiceStart  JobAction = "start"
+	JobActionServiceStop   JobAction = "stop"
+	JobActionServiceUpdate JobAction = "update"
+	JobActionServiceDelete JobAction = "delete"
 )
 
 // JobStatus represents the status of a job
@@ -74,8 +76,8 @@ type Node struct {
 	Status NodeStatus `json:"status"`
 }
 
-// Resources represents the resources in a job response
-type Resources struct {
+// AgentInstanceData holds the cluster resources managed by this agent.
+type AgentInstanceData struct {
 	ClusterIP  string         `json:"clusterIp,omitempty"`
 	KubeConfig string         `json:"kubeConfig,omitempty"`
 	Nodes      map[string]int `json:"nodes,omitempty"`
@@ -86,24 +88,41 @@ type Properties struct {
 	Nodes []Node `json:"nodes"`
 }
 type Service struct {
-	ID                string         `json:"id"`
-	Name              string         `json:"name"`
-	ExternalID        *string        `json:"externalId"`
-	CurrentProperties *Properties    `json:"currentProperties"`
-	TargetProperties  *Properties    `json:"targetProperties"`
-	Resources         *Resources     `json:"resources"`
-	CurrentStatus     ServiceStatus  `json:"currentStatus"`
-	TargetStatus      *ServiceStatus `json:"targetStatus"`
+	ID                string             `json:"id"`
+	Name              string             `json:"name"`
+	AgentInstanceID   *string            `json:"agentInstanceId,omitempty"`
+	Properties        *Properties        `json:"properties,omitempty"`
+	AgentInstanceData *AgentInstanceData `json:"agentInstanceData,omitempty"`
+	Status            ServiceStatus      `json:"status"`
+	ServiceType       *ServiceType       `json:"serviceType,omitempty"`
+}
+
+type ServiceType struct {
+	LifecycleSchema *LifecycleSchema `json:"lifecycleSchema"`
+}
+
+type LifecycleSchema struct {
+	RunningStates []ServiceStatus `json:"runningStates"`
+}
+
+// IsRunning uses the service type's schema, never a hardcoded state name.
+func (s Service) IsRunning() (bool, error) {
+	if s.ServiceType == nil || s.ServiceType.LifecycleSchema == nil {
+		return false, fmt.Errorf("service %s has no lifecycle schema", s.ID)
+	}
+	return slices.Contains(s.ServiceType.LifecycleSchema.RunningStates, s.Status), nil
 }
 
 // Job represents a job from the Fulcrum Core job queue
 type Job struct {
-	ID           string    `json:"id"`
-	Action       JobAction `json:"action"`
-	Status       JobStatus `json:"status"`
-	Priority     int       `json:"priority"`
-	Service      Service   `json:"service"`
-	ErrorMessage string    `json:"errorMessage"`
+	ID           string      `json:"id"`
+	ServiceID    string      `json:"serviceId"`
+	Params       *Properties `json:"params,omitempty"`
+	Action       JobAction   `json:"action"`
+	Status       JobStatus   `json:"status"`
+	Priority     int         `json:"priority"`
+	Service      Service     `json:"service"`
+	ErrorMessage string      `json:"errorMessage"`
 }
 
 type MetricType string
@@ -117,10 +136,10 @@ const (
 
 // MetricEntry represents a single metric measurement
 type MetricEntry struct {
-	ExternalID string     `json:"externalId"`
-	ResourceID string     `json:"resourceId"`
-	Value      float64    `json:"value"`
-	TypeName   MetricType `json:"typeName"`
+	AgentInstanceID string     `json:"agentInstanceId"`
+	ResourceID      string     `json:"resourceId"`
+	Value           float64    `json:"value"`
+	TypeName        MetricType `json:"typeName"`
 }
 
 // ServicesResponse represents the paginated response for services
@@ -138,6 +157,7 @@ type FulcrumClient interface {
 	UpdateAgentStatus(status string) error
 	GetAgentInfo() (map[string]any, error)
 	GetServices(page int) (*ServicesResponse, error)
+	GetService(id string) (Service, error)
 	GetPendingJobs() ([]*Job, error)
 	ClaimJob(jobID string) error
 	CompleteJob(jobID string, response JobResponse) error

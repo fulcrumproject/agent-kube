@@ -1,9 +1,12 @@
+// Processes Core jobs and manages Kubernetes cluster resources.
+// Job params are desired properties; service properties are the applied state.
 package agent
 
 import (
 	"context"
 	"fmt"
 	"log"
+	"maps"
 	"time"
 
 	"fulcrumproject.org/kube-agent/internal/cloudinit"
@@ -22,8 +25,8 @@ type JobHandler struct {
 
 // JobResponse represents the response for a job
 type JobResponse struct {
-	Resources  *Resources `json:"resources"`
-	ExternalID *string    `json:"externalId"`
+	AgentInstanceData *AgentInstanceData `json:"agentInstanceData,omitempty"`
+	AgentInstanceID   *string            `json:"agentInstanceId,omitempty"`
 }
 
 // NewJobHandler creates a new job handler
@@ -90,13 +93,29 @@ func (h *JobHandler) PollAndProcessJobs() error {
 
 // processJob processes a job based on its type
 func (h *JobHandler) processJob(job *Job) (*JobResponse, error) {
+	if job.Service.ID == "" {
+		return nil, fmt.Errorf("job %s has no service", job.ID)
+	}
+	if job.Action == JobActionServiceCreate || job.Action == JobActionServiceUpdate {
+		if job.Params == nil {
+			return nil, fmt.Errorf("job %s has no params", job.ID)
+		}
+	}
 	switch job.Action {
 	case JobActionServiceCreate:
 		return h.handleServiceCreate(job)
-	case JobActionServiceColdUpdate:
-		return h.handleServiceUpdate(job, false)
-	case JobActionServiceHotUpdate:
-		return h.handleServiceUpdate(job, true)
+	case JobActionServiceUpdate:
+		// Pending jobs include the service, but Core does not preload its type.
+		service, err := h.fulcrumCli.GetService(job.Service.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get service lifecycle: %w", err)
+		}
+		job.Service.ServiceType = service.ServiceType
+		running, err := job.Service.IsRunning()
+		if err != nil {
+			return nil, err
+		}
+		return h.handleServiceUpdate(job, running)
 	case JobActionServiceStart:
 		return h.handleServiceStart(job)
 	case JobActionServiceStop:
@@ -114,7 +133,7 @@ func (h *JobHandler) handleServiceCreate(job *Job) (*JobResponse, error) {
 
 	// Create response object
 	resp := &JobResponse{
-		Resources: &Resources{
+		AgentInstanceData: &AgentInstanceData{
 			Nodes: make(map[string]int, 0),
 		},
 	}
@@ -153,48 +172,51 @@ func (h *JobHandler) handleServiceCreate(job *Job) (*JobResponse, error) {
 	}
 
 	// Store kubeconfig and endpoint in response
-	resp.Resources.ClusterIP = kubeConfig.Endpoint
-	resp.Resources.KubeConfig = kubeConfig.Config
+	resp.AgentInstanceData.ClusterIP = kubeConfig.Endpoint
+	resp.AgentInstanceData.KubeConfig = kubeConfig.Config
 
 	// Create nodes if specified in the job
-	if job.Service.TargetProperties != nil && job.Service.TargetProperties.Nodes != nil {
-		for _, node := range job.Service.TargetProperties.Nodes {
+	if job.Params != nil && job.Params.Nodes != nil {
+		for _, node := range job.Params.Nodes {
 			vmID, err := h.createVM(ctx, tenantName, node)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create node %s: %w", node.ID, err)
 			}
-			resp.Resources.Nodes[node.ID] = vmID
+			resp.AgentInstanceData.Nodes[node.ID] = vmID
 		}
 	}
 
-	// Set external ID
-	externalID := fmt.Sprintf("cluster-%s", tenantName)
-	resp.ExternalID = &externalID
+	// Identify this cluster in Core and in subsequent metric reports.
+	instanceID := fmt.Sprintf("cluster-%s", tenantName)
+	resp.AgentInstanceID = &instanceID
 
 	return resp, nil
 }
 
 // handleServiceUpdate handles the updates to a service
-// It adds or removes nodes based on the difference between current and target properties
+// It compares applied service properties with the desired properties in job params.
 // VMs will be started or stopped based on their target status if start is true
 func (h *JobHandler) handleServiceUpdate(job *Job, startStop bool) (*JobResponse, error) {
 	ctx := context.Background()
 	resp := &JobResponse{
-		Resources:  job.Service.Resources,
-		ExternalID: job.Service.ExternalID,
+		AgentInstanceData: job.Service.AgentInstanceData,
+		AgentInstanceID:   job.Service.AgentInstanceID,
 	}
 
-	// Check if job has target and current properties
-	if job.Service.TargetProperties == nil {
-		return nil, fmt.Errorf("target properties are nil")
+	if err := validateInstance(job.Service); err != nil {
+		return nil, err
 	}
-	if job.Service.CurrentProperties == nil {
-		return nil, fmt.Errorf("current properties are nil")
+	// Keep the service snapshot unchanged until Core accepts completion.
+	data := *job.Service.AgentInstanceData
+	data.Nodes = maps.Clone(data.Nodes)
+	if data.Nodes == nil {
+		data.Nodes = make(map[string]int)
 	}
+	resp.AgentInstanceData = &data
 
 	// Get current and target nodes
-	currentNodes := job.Service.CurrentProperties.Nodes
-	targetNodes := job.Service.TargetProperties.Nodes
+	currentNodes := job.Service.Properties.Nodes
+	targetNodes := job.Params.Nodes
 
 	// Create a map for quick lookup of current nodes
 	currentNodesMap := make(map[string]Node)
@@ -254,7 +276,7 @@ func (h *JobHandler) handleServiceUpdate(job *Job, startStop bool) (*JobResponse
 		if err != nil {
 			return nil, fmt.Errorf("failed to create node %s: %w", targetNode.ID, err)
 		}
-		resp.Resources.Nodes[targetNode.ID] = vmID
+		resp.AgentInstanceData.Nodes[targetNode.ID] = vmID
 		if startStop && targetNode.Status == NodeStatusOn {
 			nodesToStart = append(nodesToStart, targetNode)
 		}
@@ -262,7 +284,7 @@ func (h *JobHandler) handleServiceUpdate(job *Job, startStop bool) (*JobResponse
 
 	// Remove old nodes
 	for _, currentNode := range nodesToRemove {
-		if vmID, ok := resp.Resources.Nodes[currentNode.ID]; ok {
+		if vmID, ok := resp.AgentInstanceData.Nodes[currentNode.ID]; ok {
 			// Delete the VM
 			if err := h.deleteVM(vmID); err != nil {
 				return nil, fmt.Errorf("failed to delete node %s: %w", currentNode.ID, err)
@@ -273,13 +295,13 @@ func (h *JobHandler) handleServiceUpdate(job *Job, startStop bool) (*JobResponse
 				return nil, fmt.Errorf("failed to delete worker node %s: %w", currentNode.ID, err)
 			}
 			// Remove from resources
-			delete(resp.Resources.Nodes, currentNode.ID)
+			delete(resp.AgentInstanceData.Nodes, currentNode.ID)
 		}
 	}
 
 	// Start or stop existing nodes
 	for _, currentNode := range nodesToStart {
-		if vmID, ok := resp.Resources.Nodes[currentNode.ID]; ok {
+		if vmID, ok := resp.AgentInstanceData.Nodes[currentNode.ID]; ok {
 			// Start the VM
 			err := h.startVMAndWaitJoin(vmID, job.Service.Name, currentNode.ID)
 			if err != nil {
@@ -288,7 +310,7 @@ func (h *JobHandler) handleServiceUpdate(job *Job, startStop bool) (*JobResponse
 		}
 	}
 	for _, currentNode := range nodesToStop {
-		if vmID, ok := resp.Resources.Nodes[currentNode.ID]; ok {
+		if vmID, ok := resp.AgentInstanceData.Nodes[currentNode.ID]; ok {
 			// Stop the VM
 			err := h.stopVM(vmID)
 			if err != nil {
@@ -313,8 +335,8 @@ func (h *JobHandler) handleServiceStart(job *Job) (*JobResponse, error) {
 		return nil
 	})
 	return &JobResponse{
-		Resources:  job.Service.Resources,
-		ExternalID: job.Service.ExternalID,
+		AgentInstanceData: job.Service.AgentInstanceData,
+		AgentInstanceID:   job.Service.AgentInstanceID,
 	}, err
 }
 
@@ -330,8 +352,8 @@ func (h *JobHandler) handleServiceStop(job *Job) (*JobResponse, error) {
 		return nil
 	})
 	return &JobResponse{
-		Resources:  job.Service.Resources,
-		ExternalID: job.Service.ExternalID,
+		AgentInstanceData: job.Service.AgentInstanceData,
+		AgentInstanceID:   job.Service.AgentInstanceID,
 	}, err
 }
 
@@ -345,17 +367,21 @@ func (h *JobHandler) handleServiceDelete(job *Job) (*JobResponse, error) {
 		return nil, fmt.Errorf("failed to get tenant client: %w", err)
 	}
 
-	iterateCurrNodes(job, func(node Node, vmID int) error {
+	err = iterateCurrNodes(job, func(node Node, vmID int) error {
 		// Stop and delete the VM
 		if err := h.deleteVM(vmID); err != nil {
 			return err
 		}
 		// Delete the node from the tenant control plane
-		if err := tenantCli.DeleteWorkerNode(ctx, node.ID); err != nil {
+		if err := tenantCli.DeleteWorkerNode(ctx, vmName(tenantName, node.ID)); err != nil {
 			return err
 		}
 		return nil
 	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete cluster nodes: %w", err)
+	}
 
 	// Delete tenant control plane
 	if err := h.kamajiCli.DeleteTenantControlPlane(ctx, tenantName); err != nil {
@@ -367,16 +393,26 @@ func (h *JobHandler) handleServiceDelete(job *Job) (*JobResponse, error) {
 
 // Helper methods
 
-// iterateCurrNodes iterates over the current nodes in the job and applies the provided function
+// validateInstance prevents malformed payloads from silently completing jobs.
+func validateInstance(service Service) error {
+	if service.Properties == nil || service.AgentInstanceData == nil {
+		return fmt.Errorf("service %s is missing properties or agent instance data", service.ID)
+	}
+	for _, node := range service.Properties.Nodes {
+		if service.AgentInstanceData.Nodes[node.ID] <= 0 {
+			return fmt.Errorf("service %s has no VM for node %s", service.ID, node.ID)
+		}
+	}
+	return nil
+}
+
+// iterateCurrNodes iterates over the applied nodes in the job.
 func iterateCurrNodes(job *Job, callback func(node Node, vmID int) error) error {
-	var nodes []Node
-	if job.Service.CurrentProperties != nil && job.Service.CurrentProperties.Nodes != nil {
-		nodes = job.Service.CurrentProperties.Nodes
+	if err := validateInstance(job.Service); err != nil {
+		return err
 	}
-	vmIDs := make(map[string]int)
-	if job.Service.Resources != nil && job.Service.Resources.Nodes != nil {
-		vmIDs = job.Service.Resources.Nodes
-	}
+	nodes := job.Service.Properties.Nodes
+	vmIDs := job.Service.AgentInstanceData.Nodes
 
 	for _, node := range nodes {
 		if vmID, ok := vmIDs[node.ID]; ok {
