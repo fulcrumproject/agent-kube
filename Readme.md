@@ -10,7 +10,7 @@ This agent manages the complete lifecycle of Kubernetes clusters provisioned on 
 
 ### Prerequisites
 
-- Go 1.24.1 or higher
+- Go 1.27.3 or higher (includes required standard-library security fixes)
 - Access to a running Fulcrum Core API
 - Agent type and provider registered in Fulcrum Core
 
@@ -177,3 +177,19 @@ go test -v ./internal/agent
 # Live infrastructure tests are opt-in; use only disposable resources.
 # INTEGRATION_TEST=true go test ./...
 ```
+
+### Security checks
+
+Run the vulnerability scan with the Go version required by `go.mod` (or a newer patched toolchain):
+
+```bash
+go version
+go mod verify
+go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -show verbose ./...
+```
+
+The security update uses `golang.org/x/crypto` v0.58.0 and `golang.org/x/net` v0.62.0, plus their required `x/sys`, `x/term` and `x/text` updates. Kubernetes libraries remain at v0.33.0.
+
+Verification of this update with Go 1.27.3 found no vulnerabilities in called code or imported packages. The scan still reported the module-only advisory [GO-2026-5932](https://pkg.go.dev/vuln/GO-2026-5932) for `golang.org/x/crypto/openpgp`: the agent does not import OpenPGP, directly or transitively. This is not a suppressed finding; reassess it if dependencies change. The stable `x/crypto` release is retained rather than switching to an unreleased pseudo-version solely to remove an unused package.
+
+**Rebuild and redeploy existing binaries** to apply both dependency and standard-library fixes. Updating `go.mod` alone does not patch a running agent. With `GOTOOLCHAIN=auto`, Go selects a toolchain satisfying the module's minimum; otherwise install a compatible patched version before building.
